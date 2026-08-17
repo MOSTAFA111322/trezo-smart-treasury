@@ -3,7 +3,7 @@ import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -87,6 +87,18 @@ export const appRouter = router({
   users: router({
     list: protectedProcedure.query(async ({ ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); return db ? db.select({ id: users.id, name: users.name, email: users.email, role: users.role, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.lastSignedIn)) : []; }),
     updateRole: protectedProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["user", "admin"]) })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); if (input.id === ctx.user.id) throw new Error("لا يمكن تغيير دور المستخدم الحالي"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select({ role: users.role }).from(users).where(eq(users.id, input.id)).limit(1); await db.update(users).set({ role: input.role }).where(eq(users.id, input.id)); await writeEntityAudit(db, ctx.user.id, "user.role.update", "user", input.id, { role: input.role }, previous ? { role: previous.role } : undefined); return { success: true }; }),
+    assignOperationalRole: protectedProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(["accountant", "reviewer", "cfo", "gm", "auditor"]) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const descriptions = { accountant: "إنشاء وتعديل وإرسال طلبات الصرف", reviewer: "مراجعة الطلبات وإعادتها أو رفعها", cfo: "اعتماد المرحلة المالية", gm: "الاعتماد النهائي والتنفيذ", auditor: "قراءة السجل والتقارير" } as const;
+      const [role] = await db.select().from(roles).where(eq(roles.name, input.role)).limit(1);
+      let roleId = role?.id;
+      if (!roleId) { const [created] = await db.insert(roles).values({ name: input.role, description: descriptions[input.role] }).$returningId(); roleId = created?.id; }
+      if (!roleId) throw new Error("تعذر إنشاء الدور التشغيلي");
+      await db.insert(userRoles).values({ userId: input.userId, roleId }).onDuplicateKeyUpdate({ set: { roleId } });
+      await writeEntityAudit(db, ctx.user.id, "user.operational_role.update", "user", input.userId, { role: input.role });
+      return { success: true, role: input.role } as const;
+    }),
   }),
   entities: router({
     companies: router({
@@ -190,12 +202,39 @@ export const appRouter = router({
       if (!allowedTransitions[request.status].includes(input.toStatus)) throw new Error("انتقال الحالة غير مسموح");
       const requiredPermission = requiredPermissionForTransition(input.toStatus);
       if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission))) throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
+      const roleNames = new Set<string>();
+      if (ctx.user.role !== "admin") {
+        const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
+        assignedRoles.forEach((role) => roleNames.add(role.name));
+      }
+      if (input.toStatus === "review" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
+      if (input.toStatus === "approved" && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
+      if (input.toStatus === "executed" && !roleNames.has("gm") && ctx.user.role !== "admin") throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
+      if (input.toStatus === "draft" && !roleNames.has("accountant") && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("إعادة الطلب للمسودة متاحة للمحاسب أو المراجع فقط");
       const updates: Partial<typeof disbursementRequests.$inferInsert> = { status: input.toStatus };
       if (input.toStatus === "review") updates.submittedAt = new Date();
       if (input.toStatus === "approved") updates.approvedAt = new Date();
       if (input.toStatus === "executed") updates.executedAt = new Date();
       await db.transaction(async (tx) => { await tx.update(disbursementRequests).set(updates).where(eq(disbursementRequests.id, input.requestId)); await writeWorkflowEvent(tx, input.requestId, request.status, input.toStatus, ctx.user.id, input.comment); });
       return { requestId: input.requestId, status: input.toStatus };
+    }),
+    update: protectedProcedure.input(z.object({ requestId: z.number().int().positive(), title: z.string().min(2).max(240), description: z.string().max(5000).optional(), amount: z.number().positive(), currency: z.string().min(3).max(8), beneficiaryId: z.number().int().positive(), bankAccountId: z.number().int().positive().nullable().optional(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive(), scheduledFor: z.date().nullable().optional() })).mutation(async ({ input, ctx }) => {
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
+      const [request] = await db.select().from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1);
+      if (!request) throw new Error("طلب الصرف غير موجود");
+      const roleNames = new Set<string>();
+      let assignedRoleCount = 0;
+      if (ctx.user.role !== "admin") {
+        const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
+        assignedRoleCount = assignedRoles.length;
+        assignedRoles.forEach((role) => roleNames.add(role.name));
+      }
+      const canEdit = ctx.user.role === "admin" || request.createdBy === ctx.user.id && (request.status === "draft" || request.status === "rejected") && (roleNames.has("accountant") || roleNames.has("reviewer") || assignedRoleCount === 0);
+      if (!canEdit) throw new Error("لا يمكن تعديل الطلب إلا في المسودة أو بعد إعادته للمحاسب");
+      const amountInWords = amountInArabicWords(input.amount, input.currency);
+      await db.update(disbursementRequests).set({ title: input.title, description: input.description, amount: input.amount.toFixed(4), currency: input.currency.toUpperCase(), amountInWords, beneficiaryId: input.beneficiaryId, bankAccountId: input.bankAccountId ?? null, channelId: input.channelId, fiscalYearId: input.fiscalYearId, scheduledFor: input.scheduledFor ?? null }).where(eq(disbursementRequests.id, input.requestId));
+      await writeEntityAudit(db, ctx.user.id, "request.update", "disbursement_request", input.requestId, input, request);
+      return { success: true } as const;
     }),
   }),
 });

@@ -19,11 +19,12 @@ function mockTransitionDb(permissionAssigned: boolean) {
     [request],
     [{ id: 2, name: "user" }],
     [{ id: 9, code: "requests.approve" }],
-    permissionAssigned ? [{ roleId: 2 }] : [],
-  ];
+      permissionAssigned ? [{ roleId: 2 }] : [],
+      permissionAssigned ? [{ name: "cfo" }] : [],
+    ];
   const select = vi.fn();
   for (const result of selectResults) {
-    select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue(result) }) }) });
+    select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue(result) }), innerJoin: () => ({ where: () => vi.fn().mockResolvedValue(result)() }) }) });
   }
   const tx = {
     update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
