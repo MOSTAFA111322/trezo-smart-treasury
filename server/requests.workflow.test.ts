@@ -67,6 +67,8 @@ describe("requests workflow routes", () => {
     }
     expect(workflowRows.map((row) => row.toStatus)).toEqual(["review", "approved", "executed"]);
     expect(auditRows.map((row) => row.action)).toEqual(["request.status.review", "request.status.approved", "request.status.executed"]);
+    expect(auditRows.map((row) => row.beforeData)).toEqual([{ status: "draft" }, { status: "review" }, { status: "approved" }]);
+    expect(auditRows.map((row) => row.afterData)).toEqual([{ status: "review" }, { status: "approved" }, { status: "executed" }]);
   });
 
   it("runs createDraft through review, approved, and executed as one audited sequence", async () => {
@@ -89,6 +91,8 @@ describe("requests workflow routes", () => {
     for (const toStatus of ["review", "approved", "executed"] as const) await caller.requests.transition({ requestId: 88, toStatus });
     expect(workflowRows.map((row) => row.toStatus)).toEqual(["draft", "review", "approved", "executed"]);
     expect(auditRows.map((row) => row.action)).toEqual(["request.status.draft", "request.status.review", "request.status.approved", "request.status.executed"]);
+    expect(auditRows.map((row) => row.beforeData)).toEqual([{ status: null }, { status: "draft" }, { status: "review" }, { status: "approved" }]);
+    expect(auditRows.map((row) => row.afterData)).toEqual([{ status: "draft" }, { status: "review" }, { status: "approved" }, { status: "executed" }]);
   });
 
   it("records rejected and rejected-to-draft transitions", async () => {
@@ -102,6 +106,8 @@ describe("requests workflow routes", () => {
     await expect(caller.requests.transition({ requestId: 41, toStatus: "draft", comment: "إعادة للمراجعة" })).resolves.toMatchObject({ status: "draft" });
     expect(workflowRows.map((row) => [row.fromStatus, row.toStatus])).toEqual([["draft", "rejected"], ["rejected", "draft"]]);
     expect(auditRows.map((row) => row.action)).toEqual(["request.status.rejected", "request.status.draft"]);
+    expect(auditRows.map((row) => row.beforeData)).toEqual([{ status: "draft" }, { status: "rejected" }]);
+    expect(auditRows.map((row) => row.afterData)).toEqual([{ status: "rejected" }, { status: "draft" }]);
   });
 
   it("rejects an invalid transition before writing workflow or audit rows", async () => {

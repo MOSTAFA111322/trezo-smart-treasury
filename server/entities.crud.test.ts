@@ -15,7 +15,8 @@ function fakeDb() {
   const auditRows: Array<Record<string, unknown>> = [];
   const insert = vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (typeof values.action === "string") auditRows.push(values); return { $returningId: vi.fn().mockResolvedValue([{ id: 10 }]) }; }) }));
   const update = vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) })) }));
-  return { auditRows, insert, update };
+  const select = vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([{}]) })) })) }));
+  return { auditRows, insert, update, select };
 }
 
 describe("entity CRUD audit routes", () => {
