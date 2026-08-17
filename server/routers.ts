@@ -3,7 +3,7 @@ import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -118,6 +118,31 @@ export const appRouter = router({
       await db.insert(userRoles).values({ userId: input.userId, roleId }).onDuplicateKeyUpdate({ set: { roleId } });
       await writeEntityAudit(db, ctx.user.id, "user.operational_role.update", "user", input.userId, { role: input.role });
       return { success: true, role: input.role } as const;
+    }),
+  }),
+  employees: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb();
+      return db ? db.select().from(internalEmployees).orderBy(desc(internalEmployees.createdAt)) : [];
+    }),
+    create: protectedProcedure.input(z.object({ employeeNo: z.string().trim().min(1).max(64), fullName: z.string().trim().min(2).max(180), department: z.string().trim().max(160).optional(), jobTitle: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), operationalRole: z.enum(["accountant", "reviewer", "cfo", "gm", "auditor"]) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      try {
+        const [row] = await db.insert(internalEmployees).values({ ...input, createdBy: ctx.user.id }).$returningId();
+        if (row?.id) await writeEntityAudit(db, ctx.user.id, "internal_employee.create", "internal_employee", row.id, input);
+        return { success: true, id: row?.id } as const;
+      } catch (error) { if (isDuplicateKeyError(error)) throw new Error("الرقم الوظيفي مستخدم مسبقاً."); throw error; }
+    }),
+    update: protectedProcedure.input(z.object({ id: z.number().int().positive(), employeeNo: z.string().trim().min(1).max(64), fullName: z.string().trim().min(2).max(180), department: z.string().trim().max(160).optional(), jobTitle: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), operationalRole: z.enum(["accountant", "reviewer", "cfo", "gm", "auditor"]), isActive: z.boolean() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [previous] = await db.select().from(internalEmployees).where(eq(internalEmployees.id, input.id)).limit(1);
+      const { id, ...values } = input;
+      await db.update(internalEmployees).set(values).where(eq(internalEmployees.id, id));
+      await writeEntityAudit(db, ctx.user.id, "internal_employee.update", "internal_employee", id, values, previous);
+      return { success: true } as const;
     }),
   }),
   entities: router({

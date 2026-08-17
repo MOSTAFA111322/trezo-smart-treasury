@@ -29,6 +29,13 @@
       "when": 1786950522062,
       "tag": "0003_mysterious_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787009839163,
+      "tag": "0004_unusual_wendigo",
+      "breakpoints": true
     }
   ]
 }
