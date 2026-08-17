@@ -3,7 +3,7 @@ import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -46,7 +46,7 @@ async function writeWorkflowEvent(db: DbLike, requestId: number, fromStatus: (ty
   await db.insert(auditLogs).values({ actorId, action: `request.status.${toStatus}`, entityType: "disbursement_request", entityId: String(requestId), beforeData: { status: fromStatus }, afterData: { status: toStatus }, metadata: { workflow: true } });
 }
 
-async function writeEntityAudit(db: DbLike, actorId: number, action: string, entityType: string, entityId: number, afterData?: Record<string, unknown>, beforeData?: Record<string, unknown>) {
+async function writeEntityAudit(db: DbLike, actorId: number, action: string, entityType: string, entityId: number | string, afterData?: Record<string, unknown>, beforeData?: Record<string, unknown>) {
   await db.insert(auditLogs).values({ actorId, action, entityType, entityId: String(entityId), beforeData, afterData, metadata: { source: "application" } });
 }
 
@@ -102,10 +102,17 @@ export const appRouter = router({
       remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select({ isActive: beneficiaries.isActive }).from(beneficiaries).where(eq(beneficiaries.id, input.id)).limit(1); await db.update(beneficiaries).set({ isActive: false }).where(eq(beneficiaries.id, input.id)); await writeEntityAudit(db, ctx.user.id, "beneficiary.deactivate", "beneficiary", input.id, { isActive: false }, previous ? { isActive: previous.isActive } : undefined); return { success: true }; }),
     }),
     banks: router({
-      list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(banks).orderBy(desc(banks.createdAt)) : []; }),
+      list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(banks).where(eq(banks.isActive, true)).orderBy(desc(banks.createdAt)) : []; }),
       create: protectedProcedure.input(z.object({ name: z.string().min(2).max(160), swiftCode: z.string().max(40).optional(), country: z.string().max(80).optional() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(banks).values(input).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "bank.create", "bank", row.id, input); return row; }),
       update: protectedProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).max(160), swiftCode: z.string().max(40).optional(), country: z.string().max(80).optional() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select().from(banks).where(eq(banks.id, input.id)).limit(1); await db.update(banks).set({ name: input.name, swiftCode: input.swiftCode, country: input.country }).where(eq(banks.id, input.id)); await writeEntityAudit(db, ctx.user.id, "bank.update", "bank", input.id, input, previous ? { name: previous.name, swiftCode: previous.swiftCode, country: previous.country } : undefined); return { success: true }; }),
       remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select({ isActive: banks.isActive }).from(banks).where(eq(banks.id, input.id)).limit(1); await db.update(banks).set({ isActive: false }).where(eq(banks.id, input.id)); await writeEntityAudit(db, ctx.user.id, "bank.deactivate", "bank", input.id, { isActive: false }, previous ? { isActive: previous.isActive } : undefined); return { success: true }; }),
+    }),
+    beneficiaryBankAccounts: router({
+      list: protectedProcedure.input(z.object({ beneficiaryId: z.number().int().positive() })).query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        return db.select({ id: beneficiaryBankAccounts.id, beneficiaryId: beneficiaryBankAccounts.beneficiaryId, bankId: beneficiaryBankAccounts.bankId, bankName: banks.name, accountName: beneficiaryBankAccounts.accountName, iban: beneficiaryBankAccounts.iban, currency: beneficiaryBankAccounts.currency, isDefault: beneficiaryBankAccounts.isDefault }).from(beneficiaryBankAccounts).innerJoin(banks, eq(beneficiaryBankAccounts.bankId, banks.id)).where(and(eq(beneficiaryBankAccounts.beneficiaryId, input.beneficiaryId), eq(beneficiaryBankAccounts.isActive, true), eq(banks.isActive, true))).orderBy(desc(beneficiaryBankAccounts.isDefault), desc(beneficiaryBankAccounts.createdAt));
+      }),
     }),
     channels: router({
       list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(disbursementChannels).orderBy(desc(disbursementChannels.createdAt)) : []; }),
@@ -128,7 +135,28 @@ export const appRouter = router({
   }),
   settings: router({
     fiscalYears: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(fiscalYears).orderBy(desc(fiscalYears.year)) : []; }),
+    createFiscalYear: protectedProcedure.input(z.object({ year: z.number().int().min(2000).max(2200), label: z.string().min(2).max(80), startsOn: z.date(), endsOn: z.date(), isCurrent: z.boolean().optional(), prefix: z.string().min(2).max(24).optional(), padding: z.number().int().min(1).max(12).optional() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      if (input.endsOn <= input.startsOn) throw new Error("تاريخ نهاية السنة يجب أن يكون بعد تاريخ البداية");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      return db.transaction(async (tx) => {
+        if (input.isCurrent) await tx.update(fiscalYears).set({ isCurrent: false });
+        const [created] = await tx.insert(fiscalYears).values({ year: input.year, label: input.label, startsOn: input.startsOn, endsOn: input.endsOn, isCurrent: input.isCurrent ?? false }).$returningId();
+        if (!created?.id) throw new Error("تعذر إنشاء السنة المالية");
+        await tx.insert(sequenceSettings).values({ fiscalYearId: created.id, prefix: input.prefix ?? "TRZ", nextValue: 1, padding: input.padding ?? 5 });
+        await writeEntityAudit(tx, ctx.user.id, "fiscal_year.create", "fiscal_year", created.id, input);
+        return created;
+      });
+    }),
     currencies: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(currencies).where(eq(currencies.isActive, true)).orderBy(currencies.code) : []; }),
+    createCurrency: protectedProcedure.input(z.object({ code: z.string().regex(/^[A-Z]{3,8}$/), nameAr: z.string().min(2).max(80), nameEn: z.string().min(2).max(80), symbol: z.string().min(1).max(12), decimals: z.number().int().min(0).max(6).optional() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const code = input.code.toUpperCase();
+      const [row] = await db.insert(currencies).values({ code, nameAr: input.nameAr, nameEn: input.nameEn, symbol: input.symbol, decimals: input.decimals ?? 2, isActive: true }).$returningId();
+      await writeEntityAudit(db, ctx.user.id, "currency.create", "currency", code, { ...input, code });
+      return row;
+    }),
     exchangeRates: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(exchangeRates).orderBy(desc(exchangeRates.effectiveAt), desc(exchangeRates.createdAt)).limit(200) : []; }),
     createExchangeRate: protectedProcedure.input(z.object({ baseCurrency: z.string().min(3).max(8), quoteCurrency: z.string().min(3).max(8), rate: z.number().positive().finite(), effectiveAt: z.date(), source: z.string().max(120).optional() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); if (input.baseCurrency === input.quoteCurrency) throw new Error("يجب أن تكون عملة الأساس وعملة التسعير مختلفتين"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(exchangeRates).values({ ...input, rate: input.rate.toFixed(10), createdBy: ctx.user.id }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "exchange_rate.create", "exchange_rate", row.id, input); return row; }),
   }),
