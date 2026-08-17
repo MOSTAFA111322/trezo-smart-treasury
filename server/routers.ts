@@ -1,8 +1,9 @@
 import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, fiscalYears, paymentCalendarEntries, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, fiscalYears, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -19,6 +20,22 @@ const requestInput = z.object({
 });
 
 type DbLike = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "insert">;
+type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+export function requiredPermissionForTransition(status: (typeof statuses)[number]): PermissionKey | null {
+  if (status === "review") return "requests.review";
+  if (status === "approved" || status === "rejected") return "requests.approve";
+  if (status === "executed") return "requests.execute";
+  return null;
+}
+
+async function hasEffectivePermission(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, roleName: string, permission: PermissionKey) {
+  const role = (await db.select().from(roles).where(eq(roles.name, roleName)).limit(1))[0];
+  const catalogPermission = (await db.select().from(permissionRows).where(eq(permissionRows.code, permission)).limit(1))[0];
+  if (!role || !catalogPermission) return hasPermission(roleName === "admin" ? "admin" : "user", permission);
+  const assignment = (await db.select({ roleId: rolePermissions.roleId }).from(rolePermissions).where(and(eq(rolePermissions.roleId, role.id), eq(rolePermissions.permissionId, catalogPermission.id))).limit(1))[0];
+  return Boolean(assignment);
+}
 
 const allowedTransitions: Record<(typeof statuses)[number], (typeof statuses)[number][]> = {
   draft: ["review", "rejected"], review: ["approved", "rejected"], approved: ["executed", "rejected"], executed: [], rejected: ["draft"],
@@ -34,6 +51,26 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => { const options = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...options, maxAge: -1 }); return { success: true } as const; }),
+  }),
+  permissions: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return { role: ctx.user.role, roleId: null, keys: PERMISSION_KEYS.map((key) => ({ key, permissionId: null, enabled: hasPermission(ctx.user.role, key) })), configurableRoles: Object.keys(DEFAULT_ROLE_PERMISSIONS), source: "defaults" as const };
+      const role = (await db.select().from(roles).where(eq(roles.name, ctx.user.role)).limit(1))[0];
+      if (!role) return { role: ctx.user.role, roleId: null, keys: PERMISSION_KEYS.map((key) => ({ key, permissionId: null, enabled: hasPermission(ctx.user.role, key) })), configurableRoles: Object.keys(DEFAULT_ROLE_PERMISSIONS), source: "defaults" as const };
+      const rows = await db.select({ code: permissionRows.code }).from(rolePermissions).innerJoin(permissionRows, eq(rolePermissions.permissionId, permissionRows.id)).where(eq(rolePermissions.roleId, role.id));
+      const catalog = await db.select({ id: permissionRows.id, code: permissionRows.code }).from(permissionRows);
+      const enabled = new Set(rows.map((row) => row.code));
+      return { role: ctx.user.role, roleId: role.id, keys: catalog.map((permission) => ({ key: permission.code, permissionId: permission.id, enabled: enabled.has(permission.code) })), configurableRoles: Object.keys(DEFAULT_ROLE_PERMISSIONS), source: "database" as const };
+    }),
+    update: protectedProcedure.input(z.object({ roleId: z.number().int().positive(), permissionId: z.number().int().positive(), enabled: z.boolean() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb();
+      if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      if (input.enabled) await db.insert(rolePermissions).values({ roleId: input.roleId, permissionId: input.permissionId }).onDuplicateKeyUpdate({ set: { permissionId: input.permissionId } });
+      else await db.delete(rolePermissions).where(and(eq(rolePermissions.roleId, input.roleId), eq(rolePermissions.permissionId, input.permissionId)));
+      return { success: true } as const;
+    }),
   }),
   users: router({
     list: protectedProcedure.query(async ({ ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); return db ? db.select({ id: users.id, name: users.name, email: users.email, role: users.role, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.lastSignedIn)) : []; }),
@@ -108,7 +145,8 @@ export const appRouter = router({
       const [request] = await db.select().from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1);
       if (!request) throw new Error("طلب الصرف غير موجود");
       if (!allowedTransitions[request.status].includes(input.toStatus)) throw new Error("انتقال الحالة غير مسموح");
-      if (["approved", "executed", "rejected"].includes(input.toStatus) && ctx.user.role !== "admin") throw new Error("لا تملك صلاحية اعتماد هذه العملية");
+      const requiredPermission = requiredPermissionForTransition(input.toStatus);
+      if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission))) throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
       const updates: Partial<typeof disbursementRequests.$inferInsert> = { status: input.toStatus };
       if (input.toStatus === "review") updates.submittedAt = new Date();
       if (input.toStatus === "approved") updates.approvedAt = new Date();
