@@ -33,6 +33,16 @@ describe("entity CRUD audit routes", () => {
     expect(db.auditRows.map((row) => row.action)).toEqual(["company.create", "beneficiary.create", "bank.create", "channel.create"]);
   });
 
+  it("returns a clear Arabic error for duplicate company names", async () => {
+    const db = fakeDb();
+    const duplicateInsert = vi.fn(() => ({ values: vi.fn(() => ({ $returningId: vi.fn().mockRejectedValue(Object.assign(new Error("Duplicate entry"), { code: "ER_DUP_ENTRY", errno: 1062 })) })) }));
+    db.insert.mockImplementation(duplicateInsert as never);
+    vi.spyOn(database, "getDb").mockResolvedValue(db as never);
+    const caller = appRouter.createCaller(adminContext());
+    await expect(caller.entities.companies.create({ name: "شركة موجودة", defaultCurrency: "SAR" })).rejects.toThrow("اسم الشركة أو رقم التسجيل مستخدم مسبقاً");
+    expect(db.auditRows).toHaveLength(0);
+  });
+
   it("writes audit events for update and logical deactivation routes", async () => {
     const db = fakeDb();
     vi.spyOn(database, "getDb").mockResolvedValue(db as never);
