@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { auditLogs, disbursementRequests, fiscalYears, sequenceSettings, workflowEvents } from "../drizzle/schema";
+import { auditLogs, banks, beneficiaries, companies, disbursementChannels, disbursementRequests, fiscalYears, paymentCalendarEntries, sequenceSettings, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -32,6 +32,32 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => { const options = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...options, maxAge: -1 }); return { success: true } as const; }),
+  }),
+  entities: router({
+    companies: router({
+      list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(companies).orderBy(desc(companies.createdAt)) : []; }),
+      create: protectedProcedure.input(z.object({ name: z.string().min(2).max(180), legalName: z.string().max(220).optional(), registrationNumber: z.string().max(80).optional(), defaultCurrency: z.string().length(3) })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(companies).values({ ...input, createdBy: ctx.user.id }).$returningId(); return row; }),
+      remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); await db.update(companies).set({ isActive: false }).where(eq(companies.id, input.id)); return { success: true }; }),
+    }),
+    beneficiaries: router({
+      list: protectedProcedure.input(z.object({ companyId: z.number().int().positive().optional() }).optional()).query(async ({ input }) => { const db = await getDb(); return db ? db.select().from(beneficiaries).where(input?.companyId ? eq(beneficiaries.companyId, input.companyId) : undefined).orderBy(desc(beneficiaries.createdAt)) : []; }),
+      create: protectedProcedure.input(z.object({ companyId: z.number().int().positive(), name: z.string().min(2).max(180), type: z.enum(["individual", "organization"]), taxNumber: z.string().max(80).optional(), phone: z.string().max(40).optional(), email: z.string().email().optional() })).mutation(async ({ input }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(beneficiaries).values(input).$returningId(); return row; }),
+    }),
+    banks: router({
+      list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(banks).orderBy(desc(banks.createdAt)) : []; }),
+      create: protectedProcedure.input(z.object({ name: z.string().min(2).max(160), swiftCode: z.string().max(40).optional(), country: z.string().max(80).optional() })).mutation(async ({ input }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(banks).values(input).$returningId(); return row; }),
+    }),
+    channels: router({
+      list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(disbursementChannels).orderBy(desc(disbursementChannels.createdAt)) : []; }),
+      create: protectedProcedure.input(z.object({ name: z.string().min(2).max(120), code: z.string().min(2).max(32), description: z.string().max(500).optional() })).mutation(async ({ input }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(disbursementChannels).values(input).$returningId(); return row; }),
+    }),
+  }),
+  calendar: router({
+    list: protectedProcedure.input(z.object({ from: z.date().optional(), to: z.date().optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; const rows = await db.select().from(paymentCalendarEntries).orderBy(paymentCalendarEntries.dueDate); return rows.filter((row) => (!input?.from || row.dueDate >= input.from) && (!input?.to || row.dueDate <= input.to)); }),
+    create: protectedProcedure.input(z.object({ companyId: z.number().int().positive(), beneficiaryId: z.number().int().positive().optional(), title: z.string().min(3).max(240), amount: z.number().positive(), currency: z.string().length(3), dueDate: z.date(), notes: z.string().max(2000).optional() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(paymentCalendarEntries).values({ ...input, amount: input.amount.toFixed(4), createdBy: ctx.user.id }).$returningId(); return row; }),
+  }),
+  audit: router({
+    list: protectedProcedure.input(z.object({ entityType: z.string().max(80).optional(), entityId: z.string().max(80).optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(200); return rows.filter((row) => (!input?.entityType || row.entityType === input.entityType) && (!input?.entityId || row.entityId === input.entityId)); }),
   }),
   dashboard: router({
     summary: protectedProcedure.query(async () => {
