@@ -38,7 +38,7 @@ async function hasEffectivePermission(db: NonNullable<Awaited<ReturnType<typeof 
 }
 
 const allowedTransitions: Record<(typeof statuses)[number], (typeof statuses)[number][]> = {
-  draft: ["review", "rejected"], review: ["approved", "rejected"], approved: ["executed", "rejected"], executed: [], rejected: ["draft"],
+  draft: ["review", "rejected"], review: ["review", "approved", "rejected"], approved: ["executed", "rejected"], executed: [], rejected: ["draft"],
 };
 
 async function writeWorkflowEvent(db: DbLike, requestId: number, fromStatus: (typeof statuses)[number] | null, toStatus: (typeof statuses)[number], actorId: number, comment?: string) {
@@ -207,7 +207,8 @@ export const appRouter = router({
         const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
         assignedRoles.forEach((role) => roleNames.add(role.name));
       }
-      if (input.toStatus === "review" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
+      if (input.toStatus === "review" && request.status === "draft" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
+      if (input.toStatus === "review" && request.status === "review" && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("تأكيد المراجعة متاح للمراجع فقط");
       if (input.toStatus === "approved" && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
       if (input.toStatus === "executed" && !roleNames.has("gm") && ctx.user.role !== "admin") throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
       if (input.toStatus === "draft" && !roleNames.has("accountant") && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("إعادة الطلب للمسودة متاحة للمحاسب أو المراجع فقط");
