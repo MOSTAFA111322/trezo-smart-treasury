@@ -37,6 +37,26 @@ async function hasEffectivePermission(db: NonNullable<Awaited<ReturnType<typeof 
   return Boolean(assignment);
 }
 
+type RequestValidationDb = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "select">;
+
+async function validateRequestChannelAndBank(
+  db: RequestValidationDb,
+  channelId: number,
+  beneficiaryId: number,
+  bankAccountId: number | null | undefined,
+) {
+  const [channel] = await db.select().from(disbursementChannels).where(eq(disbursementChannels.id, channelId)).limit(1);
+  if (!channel || !channel.isActive) throw new Error("قناة الصرف غير موجودة أو غير مفعلة");
+  const isBankChannel = channel.code.toLowerCase().includes("bank") || channel.name.includes("بنك");
+  if (isBankChannel) {
+    if (!bankAccountId) throw new Error("يجب اختيار الحساب البنكي عند استخدام قناة البنك");
+    const [account] = await db.select().from(beneficiaryBankAccounts).where(and(eq(beneficiaryBankAccounts.id, bankAccountId), eq(beneficiaryBankAccounts.beneficiaryId, beneficiaryId), eq(beneficiaryBankAccounts.isActive, true))).limit(1);
+    if (!account) throw new Error("الحساب البنكي غير مرتبط بالمستفيد أو غير مفعّل");
+    return bankAccountId;
+  }
+  return null;
+}
+
 const allowedTransitions: Record<(typeof statuses)[number], (typeof statuses)[number][]> = {
   draft: ["review", "rejected"], review: ["review", "approved", "rejected"], approved: ["executed", "rejected"], executed: [], rejected: ["draft"],
 };
@@ -182,6 +202,7 @@ export const appRouter = router({
     createDraft: protectedProcedure.input(requestInput).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
       return db.transaction(async (tx) => {
+        const normalizedBankAccountId = await validateRequestChannelAndBank(tx, input.channelId, input.beneficiaryId, input.bankAccountId);
         const [year] = await tx.select().from(fiscalYears).where(eq(fiscalYears.id, input.fiscalYearId)).limit(1);
         if (!year) throw new Error("السنة المالية غير موجودة");
         const [sequence] = await tx.select().from(sequenceSettings).where(eq(sequenceSettings.fiscalYearId, input.fiscalYearId)).limit(1);
@@ -189,7 +210,7 @@ export const appRouter = router({
         const serial = String(sequence.nextValue).padStart(sequence.padding, "0");
         const referenceNumber = `${sequence.prefix}-${year.year}-${serial}`;
         const sequenceUpdate = await tx.update(sequenceSettings).set({ nextValue: sequence.nextValue + 1 }).where(and(eq(sequenceSettings.id, sequence.id), eq(sequenceSettings.nextValue, sequence.nextValue))); if (sequenceUpdate[0]?.affectedRows !== 1) throw new Error("تعذر حجز الرقم المرجعي؛ أعد المحاولة");
-        const [created] = await tx.insert(disbursementRequests).values({ ...input, amount: input.amount.toFixed(4), amountInWords: amountInArabicWords(input.amount, input.currency), referenceNumber, createdBy: ctx.user.id, status: "draft" }).$returningId();
+        const [created] = await tx.insert(disbursementRequests).values({ ...input, bankAccountId: normalizedBankAccountId, amount: input.amount.toFixed(4), amountInWords: amountInArabicWords(input.amount, input.currency), referenceNumber, createdBy: ctx.user.id, status: "draft" }).$returningId();
         if (!created?.id) throw new Error("تعذر إنشاء الطلب");
         await writeWorkflowEvent(tx, created.id, null, "draft", ctx.user.id, "إنشاء مسودة");
         return { id: created.id, referenceNumber };
@@ -232,8 +253,9 @@ export const appRouter = router({
       }
       const canEdit = ctx.user.role === "admin" || request.createdBy === ctx.user.id && (request.status === "draft" || request.status === "rejected") && (roleNames.has("accountant") || roleNames.has("reviewer") || assignedRoleCount === 0);
       if (!canEdit) throw new Error("لا يمكن تعديل الطلب إلا في المسودة أو بعد إعادته للمحاسب");
+      const normalizedBankAccountId = await validateRequestChannelAndBank(db, input.channelId, input.beneficiaryId, input.bankAccountId);
       const amountInWords = amountInArabicWords(input.amount, input.currency);
-      await db.update(disbursementRequests).set({ title: input.title, description: input.description, amount: input.amount.toFixed(4), currency: input.currency.toUpperCase(), amountInWords, beneficiaryId: input.beneficiaryId, bankAccountId: input.bankAccountId ?? null, channelId: input.channelId, fiscalYearId: input.fiscalYearId, scheduledFor: input.scheduledFor ?? null }).where(eq(disbursementRequests.id, input.requestId));
+      await db.update(disbursementRequests).set({ title: input.title, description: input.description, amount: input.amount.toFixed(4), currency: input.currency.toUpperCase(), amountInWords, beneficiaryId: input.beneficiaryId, bankAccountId: normalizedBankAccountId, channelId: input.channelId, fiscalYearId: input.fiscalYearId, scheduledFor: input.scheduledFor ?? null }).where(eq(disbursementRequests.id, input.requestId));
       await writeEntityAudit(db, ctx.user.id, "request.update", "disbursement_request", input.requestId, input, request);
       return { success: true } as const;
     }),

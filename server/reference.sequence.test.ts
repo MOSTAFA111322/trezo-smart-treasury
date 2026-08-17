@@ -22,7 +22,7 @@ describe("reference sequence atomic reservation", () => {
     const makeTransaction = (): Transaction => {
       let selectCalls = 0;
       const transaction: Transaction = {
-        select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => { selectCalls += 1; if (selectCalls === 2) { sequenceReads += 1; if (sequenceReads === 6) releaseSequenceReads?.(); await allReadSequence; return [{ id: 7, fiscalYearId: 7, prefix: "TR", nextValue: 12, padding: 4 }]; } return [{ id: 7, year: 2026 }]; }) })) })) })),
+        select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => { selectCalls += 1; if (selectCalls === 1) return [{ id: 1, isActive: true, code: "cashier", name: "صراف" }]; if (selectCalls === 2) return [{ id: 7, year: 2026 }]; if (selectCalls === 3) { sequenceReads += 1; if (sequenceReads === 6) releaseSequenceReads?.(); await allReadSequence; return [{ id: 7, fiscalYearId: 7, prefix: "TR", nextValue: 12, padding: 4 }]; } return [{ id: 7, fiscalYearId: 7, prefix: "TR", nextValue: 12, padding: 4 }]; }) })) })) })),
         update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => { if (reserved) return [{ affectedRows: 0 }]; reserved = true; return [{ affectedRows: 1 }]; }) })) })),
         insert: vi.fn(() => ({ values: vi.fn(() => ({ $returningId: vi.fn().mockResolvedValue([{ id: 99 }]) })) })),
       };
