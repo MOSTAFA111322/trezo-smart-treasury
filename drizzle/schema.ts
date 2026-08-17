@@ -81,6 +81,17 @@ export const currencies = mysqlTable("currencies", {
   isActive: boolean("isActive").default(true).notNull(),
 });
 
+export const exchangeRates = mysqlTable("exchange_rates", {
+  id: int("id").autoincrement().primaryKey(),
+  baseCurrency: varchar("baseCurrency", { length: 8 }).notNull(),
+  quoteCurrency: varchar("quoteCurrency", { length: 8 }).notNull(),
+  rate: decimal("rate", { precision: 24, scale: 10 }).notNull(),
+  effectiveAt: timestamp("effectiveAt").notNull(),
+  source: varchar("source", { length: 120 }),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ pairIdx: index("exchange_rates_pair_idx").on(table.baseCurrency, table.quoteCurrency), effectiveIdx: index("exchange_rates_effective_idx").on(table.effectiveAt) }));
+
 export const fiscalYears = mysqlTable("fiscal_years", {
   id: int("id").autoincrement().primaryKey(),
   year: int("year").notNull(),
