@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaries, companies, disbursementChannels, disbursementRequests, fiscalYears, paymentCalendarEntries, sequenceSettings, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, fiscalYears, paymentCalendarEntries, sequenceSettings, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -34,6 +34,10 @@ export const appRouter = router({
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => { const options = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...options, maxAge: -1 }); return { success: true } as const; }),
+  }),
+  users: router({
+    list: protectedProcedure.query(async ({ ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); return db ? db.select({ id: users.id, name: users.name, email: users.email, role: users.role, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.lastSignedIn)) : []; }),
+    updateRole: protectedProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["user", "admin"]) })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); if (input.id === ctx.user.id) throw new Error("لا يمكن تغيير دور المستخدم الحالي"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); await db.update(users).set({ role: input.role }).where(eq(users.id, input.id)); return { success: true }; }),
   }),
   entities: router({
     companies: router({
@@ -74,6 +78,7 @@ export const appRouter = router({
   }),
   settings: router({
     fiscalYears: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(fiscalYears).orderBy(desc(fiscalYears.year)) : []; }),
+    currencies: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(currencies).where(eq(currencies.isActive, true)).orderBy(currencies.code) : []; }),
   }),
   attachments: router({
     list: protectedProcedure.input(z.object({ requestId: z.number().int().positive() })).query(async ({ input, ctx }) => { const db = await getDb(); if (!db) return []; const [request] = await db.select({ createdBy: disbursementRequests.createdBy }).from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1); if (!request || !canAccessOwnedRequest(ctx.user.role, ctx.user.id, request.createdBy)) throw new Error("لا تملك صلاحية الوصول إلى مرفقات هذا الطلب"); return db.select().from(attachments).where(eq(attachments.requestId, input.requestId)).orderBy(desc(attachments.createdAt)); }),
