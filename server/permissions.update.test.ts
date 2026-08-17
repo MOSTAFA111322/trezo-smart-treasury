@@ -36,18 +36,18 @@ describe("permissions.update route", () => {
   });
 
   it("allows an admin to update a role permission", async () => {
-    const permissionMutation = {
-      onDuplicateKeyUpdate: vi.fn().mockResolvedValue(undefined),
-    };
+    const permissionMutation = { onDuplicateKeyUpdate: vi.fn().mockResolvedValue(undefined) };
+    const auditValues: Array<Record<string, unknown>> = [];
     const fakeDb = {
-      insert: vi.fn(() => ({ values: vi.fn(() => permissionMutation) })),
+      insert: vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (values.action === "permission.update") auditValues.push(values); return permissionMutation; }) })),
       delete: vi.fn(),
     };
     vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
     const caller = appRouter.createCaller(contextFor("admin"));
 
     await expect(caller.permissions.update({ roleId: 2, permissionId: 3, enabled: true })).resolves.toEqual({ success: true });
-    expect(fakeDb.insert).toHaveBeenCalledTimes(1);
+    expect(fakeDb.insert).toHaveBeenCalledTimes(2);
     expect(permissionMutation.onDuplicateKeyUpdate).toHaveBeenCalledTimes(1);
+    expect(auditValues[0]).toMatchObject({ beforeData: { roleId: 2, permissionId: 3, enabled: false }, afterData: { roleId: 2, permissionId: 3, enabled: true } });
   });
 });
