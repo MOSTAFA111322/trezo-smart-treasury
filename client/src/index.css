@@ -24,6 +24,27 @@
   --radius: 0.9rem;
 }
 
+.dark {
+  --background: oklch(0.18 0.025 168);
+  --foreground: oklch(0.94 0.018 160);
+  --card: oklch(0.225 0.03 168);
+  --card-foreground: oklch(0.94 0.018 160);
+  --popover: oklch(0.225 0.03 168);
+  --popover-foreground: oklch(0.94 0.018 160);
+  --primary: oklch(0.62 0.12 166);
+  --primary-foreground: oklch(0.16 0.025 168);
+  --secondary: oklch(0.29 0.04 168);
+  --secondary-foreground: oklch(0.91 0.02 160);
+  --muted: oklch(0.27 0.028 168);
+  --muted-foreground: oklch(0.72 0.035 165);
+  --accent: oklch(0.76 0.12 77);
+  --accent-foreground: oklch(0.18 0.025 168);
+  --destructive: oklch(0.67 0.14 27);
+  --border: oklch(0.34 0.035 168);
+  --input: oklch(0.34 0.035 168);
+  --ring: oklch(0.66 0.12 166);
+}
+
 * { border-color: var(--border); }
 html { direction: rtl; }
 body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif; }

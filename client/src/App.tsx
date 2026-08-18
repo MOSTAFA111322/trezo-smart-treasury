@@ -11,6 +11,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/workspace"} component={Home} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -27,8 +28,8 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider
-        defaultTheme="light"
-        // switchable
+        defaultTheme="dark"
+        switchable
       >
         <TooltipProvider>
           <Toaster />

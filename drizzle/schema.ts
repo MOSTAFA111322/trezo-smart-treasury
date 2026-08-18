@@ -81,6 +81,17 @@ export const currencies = mysqlTable("currencies", {
   isActive: boolean("isActive").default(true).notNull(),
 });
 
+export const exchangeRates = mysqlTable("exchange_rates", {
+  id: int("id").autoincrement().primaryKey(),
+  baseCurrency: varchar("baseCurrency", { length: 8 }).notNull(),
+  quoteCurrency: varchar("quoteCurrency", { length: 8 }).notNull(),
+  rate: decimal("rate", { precision: 24, scale: 10 }).notNull(),
+  effectiveAt: timestamp("effectiveAt").notNull(),
+  source: varchar("source", { length: 120 }),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ pairIdx: index("exchange_rates_pair_idx").on(table.baseCurrency, table.quoteCurrency), effectiveIdx: index("exchange_rates_effective_idx").on(table.effectiveAt) }));
+
 export const fiscalYears = mysqlTable("fiscal_years", {
   id: int("id").autoincrement().primaryKey(),
   year: int("year").notNull(),
@@ -193,6 +204,21 @@ export const rolePermissions = mysqlTable("role_permissions", {
   permissionId: int("permissionId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ pk: uniqueIndex("role_permission_pk").on(table.roleId, table.permissionId) }));
+
+export const internalEmployees = mysqlTable("internal_employees", {
+  id: int("id").autoincrement().primaryKey(),
+  employeeNo: varchar("employeeNo", { length: 64 }).notNull().unique(),
+  fullName: varchar("fullName", { length: 180 }).notNull(),
+  department: varchar("department", { length: 160 }),
+  jobTitle: varchar("jobTitle", { length: 160 }),
+  phone: varchar("phone", { length: 40 }),
+  operationalRole: mysqlEnum("operationalRole", ["accountant", "reviewer", "cfo", "gm", "auditor"]).notNull(),
+  linkedUserId: int("linkedUserId"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ employeeNoIdx: uniqueIndex("internal_employees_employee_no_idx").on(table.employeeNo), roleIdx: index("internal_employees_role_idx").on(table.operationalRole) }));
 
 export const userRoles = mysqlTable("user_roles", {
   userId: int("userId").notNull(),

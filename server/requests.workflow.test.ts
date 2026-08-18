@@ -22,7 +22,7 @@ describe("requests workflow routes", () => {
     const auditRows: Array<Record<string, unknown>> = [];
     let selectCalls = 0;
     const tx = {
-      select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockImplementation(async () => { selectCalls += 1; return selectCalls === 1 ? [{ id: 3, year: 2026 }] : [{ id: 4, fiscalYearId: 3, prefix: "TRZ", nextValue: 12, padding: 4 }]; }) })) })) })),
+      select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockImplementation(async () => { selectCalls += 1; if (selectCalls === 1) return [{ id: 3, isActive: true, code: "cashier", name: "صراف" }]; if (selectCalls === 2) return [{ id: 3, year: 2026 }]; return [{ id: 4, fiscalYearId: 3, prefix: "TRZ", nextValue: 12, padding: 4 }]; }) })) })) })),
       update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) })) })),
       insert: vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (typeof values.action === "string") auditRows.push(values); return { $returningId: vi.fn().mockResolvedValue([{ id: 88 }]) }; }) })),
     };
@@ -76,7 +76,7 @@ describe("requests workflow routes", () => {
     const auditRows: Array<Record<string, unknown>> = [];
     let createSelect = 0;
     const tx = {
-      select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockImplementation(async () => { createSelect += 1; return createSelect === 1 ? [{ id: 3, year: 2026 }] : [{ id: 4, fiscalYearId: 3, prefix: "TRZ", nextValue: 12, padding: 4 }]; }) })) })) })),
+      select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn().mockImplementation(async () => { createSelect += 1; if (createSelect === 1) return [{ id: 3, isActive: true, code: "cashier", name: "صراف" }]; if (createSelect === 2) return [{ id: 3, year: 2026 }]; return [{ id: 4, fiscalYearId: 3, prefix: "TRZ", nextValue: 12, padding: 4 }]; }) })) })) })),
       update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) })) })),
       insert: vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (values.toStatus) workflowRows.push(values); if (typeof values.action === "string") auditRows.push(values); return { $returningId: vi.fn().mockResolvedValue([{ id: 88 }]) }; }) })),
     };
