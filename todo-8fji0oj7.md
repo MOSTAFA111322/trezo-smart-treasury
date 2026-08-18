@@ -28,3 +28,12 @@
 - [x] Repeat the missing-rate handoff verification on a mobile viewport and capture the readiness banner and exchange-rate action state.
 - [x] Prevent unsafe guessed exchange-rate pairs when an incomplete unified total has no named missing currency; show a prefilled correction action only for an actionable named currency.
 - [x] Carry a named missing currency from the dashboard into settings and prefill its exchange-rate pair for correction.
+- [x] Confirm the manual exchange-rate entry approach.
+- [x] Confirm the daily owner-notification delivery method for overdue requests.
+- [x] Add durable manual exchange-rate attribution and approval metadata without overwriting prior approved rates.
+- [x] Add a scheduled, idempotent overdue-request alert workflow with visible delivery outcomes.
+- [ ] Configure the approved daily owner-alert job after deployment, using an explicit schedule and an idempotent callback.
+- [x] Add exportable financial reports filtered by company and fiscal year.
+- [x] Add focused tests and responsive verification for exchange rates, alerts, and report exports.
+- [ ] Save a delivery checkpoint for the treasury operations upgrade.
+- [x] Add explicit approval status, approver, approval timestamp, and optional approval note to newly entered manual exchange-rate records, with tests.

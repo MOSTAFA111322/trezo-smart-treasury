@@ -37,4 +37,17 @@ describe("Workspace exchange-rate readiness", () => {
     expect(screen.getByLabelText("عملة الأساس")).toHaveValue("USD");
     expect(screen.getByLabelText("عملة التسعير")).toHaveValue("YER");
   });
+
+  it("requires a manual attribution before enabling exchange-rate saving and shows owner alerts", () => {
+    render(<Workspace active="settings" onBack={vi.fn()} onCreateRequest={vi.fn()} />);
+
+    expect(screen.getByLabelText("مصدر سعر الصرف")).toHaveValue("إدخال يدوي");
+    expect(screen.getByText("تنبيه الطلبات المتأخرة")).toBeInTheDocument();
+    expect(screen.getByLabelText("ملاحظة اعتماد سعر الصرف")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("سعر الصرف"), { target: { value: "1.25" } });
+    fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: " " } });
+    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: "اعتماد لجنة الخزينة" } });
+    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده" })).toBeEnabled();
+  });
 });

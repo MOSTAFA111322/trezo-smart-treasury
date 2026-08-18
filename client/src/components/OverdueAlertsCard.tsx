@@ -1,0 +1,26 @@
+import { useEffect, useState } from "react";
+import { BellRing, CalendarClock, CheckCircle2 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+
+const DEFAULT_DAILY_OWNER_ALERT_CRON = "0 0 6 * * *";
+
+export function OverdueAlertsCard() {
+  const config = trpc.overdueAlerts.getConfig.useQuery();
+  const [isEnabled, setIsEnabled] = useState(true);
+  const [message, setMessage] = useState("");
+  useEffect(() => { if (typeof config.data?.isEnabled === "boolean") setIsEnabled(config.data.isEnabled); }, [config.data]);
+  const configure = trpc.overdueAlerts.configure.useMutation({
+    onSuccess: () => { setMessage(isEnabled ? "تم تشغيل التنبيه اليومي وتسجيله بنجاح." : "تم إيقاف التنبيه اليومي مع الاحتفاظ بسجل الإعداد."); void config.refetch(); },
+    onError: (error) => setMessage(`تعذر حفظ إعداد التنبيه: ${error.message}`),
+  });
+  const save = () => configure.mutate({ isEnabled, cronExpression: config.data?.cronExpression ?? DEFAULT_DAILY_OWNER_ALERT_CRON });
+  const hasSchedule = Boolean(config.data?.scheduleCronTaskUid);
+
+  return <section className="mt-5 rounded-2xl border bg-card p-5 sm:p-6" aria-labelledby="overdue-alert-title">
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-primary"><BellRing size={21}/><h3 id="overdue-alert-title" className="font-display text-lg font-extrabold">تنبيه الطلبات المتأخرة</h3></div><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">يرسل ملخصًا واحدًا لمالك النظام بالطلبات التي تجاوزت موعدها ولم تُنفذ بعد. يظل كل تشغيل مسجلاً لمنع التنبيهات المكررة لنفس اليوم.</p></div><span className={isEnabled ? "inline-flex items-center gap-1.5 self-start rounded-full bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary" : "inline-flex items-center gap-1.5 self-start rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground"}>{isEnabled ? <CheckCircle2 size={14}/> : <CalendarClock size={14}/>} {isEnabled ? "مفعّل" : "متوقف"}</span></div>
+    <div className="mt-5 rounded-xl bg-secondary/60 p-4"><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} className="mt-1 size-4 accent-primary"/><span><span className="block text-sm font-bold">إرسال ملخص يومي لمالك النظام</span><span className="mt-1 block text-xs leading-6 text-muted-foreground">التوقيت الافتراضي: 09:00 صباحًا بتوقيت اليمن (06:00 UTC). لا يتم إرسال شيء إذا لم توجد طلبات متأخرة.</span></span></label></div>
+    {config.error ? <p className="mt-4 text-sm text-destructive">تعذر تحميل حالة التنبيه: {config.error.message}</p> : null}
+    {message ? <p role="status" className="mt-4 text-sm font-semibold text-primary">{message}</p> : null}
+    <div className="mt-5 flex flex-wrap items-center gap-3"><button type="button" disabled={configure.isPending || config.isLoading} onClick={save} className="rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50">{configure.isPending ? "جارٍ حفظ الإعداد…" : isEnabled ? "تفعيل التنبيه اليومي" : "حفظ إيقاف التنبيه"}</button>{hasSchedule ? <span className="text-xs text-muted-foreground">تم ربط جدولة يومية بهذا الإعداد.</span> : <span className="text-xs text-muted-foreground">ستُنشأ الجدولة عند أول تفعيل.</span>}</div>
+  </section>;
+}

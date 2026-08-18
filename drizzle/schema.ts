@@ -89,8 +89,36 @@ export const exchangeRates = mysqlTable("exchange_rates", {
   effectiveAt: timestamp("effectiveAt").notNull(),
   source: varchar("source", { length: 120 }),
   createdBy: int("createdBy").notNull(),
+  approvalStatus: mysqlEnum("exchange_rate_approval_status", ["approved", "voided"]).default("approved").notNull(),
+  approvedBy: int("approvedBy"),
+  approvedAt: timestamp("approvedAt"),
+  approvalNote: text("approvalNote"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ pairIdx: index("exchange_rates_pair_idx").on(table.baseCurrency, table.quoteCurrency), effectiveIdx: index("exchange_rates_effective_idx").on(table.effectiveAt) }));
+
+export const overdueAlertConfigs = mysqlTable("overdue_alert_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  isEnabled: boolean("isEnabled").default(true).notNull(),
+  cronExpression: varchar("cronExpression", { length: 64 }).default("0 0 6 * * *").notNull(),
+  scheduleCronTaskUid: varchar("scheduleCronTaskUid", { length: 65 }),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ taskUidIdx: index("overdue_alert_configs_task_uid_idx").on(table.scheduleCronTaskUid) }));
+
+export const overdueAlertDeliveries = mysqlTable("overdue_alert_deliveries", {
+  id: int("id").autoincrement().primaryKey(),
+  alertConfigId: int("alertConfigId").notNull(),
+  deliveryDate: varchar("deliveryDate", { length: 10 }).notNull(),
+  status: mysqlEnum("overdue_alert_delivery_status", ["pending", "sent", "failed"]).default("pending").notNull(),
+  requestCount: int("requestCount").default(0).notNull(),
+  content: text("content"),
+  lastError: text("lastError"),
+  attempts: int("attempts").default(0).notNull(),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ deliveryIdx: uniqueIndex("overdue_alert_deliveries_config_date_idx").on(table.alertConfigId, table.deliveryDate) }));
 
 export const fiscalYears = mysqlTable("fiscal_years", {
   id: int("id").autoincrement().primaryKey(),

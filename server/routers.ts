@@ -1,17 +1,21 @@
 import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
+import { parse as parseCookie } from "cookie";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, overdueAlertConfigs, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
+import { DEFAULT_OVERDUE_ALERT_CRON, OVERDUE_ALERT_PATH } from "./overdueAlerts";
 
 const statuses = ["draft", "review", "approved", "executed", "rejected"] as const;
 const statusSchema = z.enum(statuses);
+function requestUserSession(cookieHeader?: string): string { return parseCookie(cookieHeader ?? "")[COOKIE_NAME] ?? ""; }
 export function canAccessOwnedRequest(userRole: string, userId: number, ownerId: number | null | undefined) { return userRole === "admin" || ownerId === userId; }
 const requestInput = z.object({
   title: z.string().min(3).max(240), companyId: z.number().int().positive(), beneficiaryId: z.number().int().positive(),
@@ -215,12 +219,49 @@ export const appRouter = router({
       return row;
     }),
     exchangeRates: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(exchangeRates).orderBy(desc(exchangeRates.effectiveAt), desc(exchangeRates.createdAt)).limit(200) : []; }),
-    createExchangeRate: protectedProcedure.input(z.object({ baseCurrency: z.string().min(3).max(8), quoteCurrency: z.string().min(3).max(8), rate: z.number().positive().finite(), effectiveAt: z.date(), source: z.string().max(120).optional() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); if (input.baseCurrency === input.quoteCurrency) throw new Error("يجب أن تكون عملة الأساس وعملة التسعير مختلفتين"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(exchangeRates).values({ ...input, rate: input.rate.toFixed(10), createdBy: ctx.user.id }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "exchange_rate.create", "exchange_rate", row.id, input); return row; }),
+    createExchangeRate: protectedProcedure.input(z.object({ baseCurrency: z.string().min(3).max(8), quoteCurrency: z.string().min(3).max(8), rate: z.number().positive().finite(), effectiveAt: z.date(), source: z.string().trim().min(3).max(120), approvalNote: z.string().trim().max(500).optional() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); if (input.baseCurrency === input.quoteCurrency) throw new Error("يجب أن تكون عملة الأساس وعملة التسعير مختلفتين"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const approvedAt = new Date(); const [row] = await db.insert(exchangeRates).values({ ...input, rate: input.rate.toFixed(10), createdBy: ctx.user.id, approvalStatus: "approved", approvedBy: ctx.user.id, approvedAt, approvalNote: input.approvalNote || null }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "exchange_rate.create", "exchange_rate", row.id, { ...input, approvalStatus: "approved", approvedBy: ctx.user.id, approvedAt }); return row; }),
   }),
   attachments: router({
     list: protectedProcedure.input(z.object({ requestId: z.number().int().positive() })).query(async ({ input, ctx }) => { const db = await getDb(); if (!db) return []; const [request] = await db.select({ createdBy: disbursementRequests.createdBy }).from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1); if (!request || !canAccessOwnedRequest(ctx.user.role, ctx.user.id, request.createdBy)) throw new Error("لا تملك صلاحية الوصول إلى مرفقات هذا الطلب"); return db.select().from(attachments).where(eq(attachments.requestId, input.requestId)).orderBy(desc(attachments.createdAt)); }),
     download: protectedProcedure.input(z.object({ attachmentId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.select({ attachment: attachments, requestCreatedBy: disbursementRequests.createdBy }).from(attachments).innerJoin(disbursementRequests, eq(attachments.requestId, disbursementRequests.id)).where(eq(attachments.id, input.attachmentId)).limit(1); if (!row || !canAccessOwnedRequest(ctx.user.role, ctx.user.id, row.requestCreatedBy)) throw new Error("لا تملك صلاحية تنزيل هذا المرفق"); return { fileName: row.attachment.fileName, mimeType: row.attachment.mimeType, url: `/manus-storage/${row.attachment.storageKey}` }; }),
     upload: protectedProcedure.input(z.object({ requestId: z.number().int().positive(), fileName: z.string().min(1).max(240), mimeType: z.string().min(1).max(120), sizeBytes: z.number().int().positive().max(8_000_000), base64: z.string().min(1).max(12_000_000) })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [request] = await db.select({ createdBy: disbursementRequests.createdBy }).from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1); if (!request || !canAccessOwnedRequest(ctx.user.role, ctx.user.id, request.createdBy)) throw new Error("لا تملك صلاحية إرفاق ملف بهذا الطلب"); const base64Data = input.base64.includes(",") ? input.base64.split(",")[1] : input.base64; const bytes = Buffer.from(base64Data, "base64"); if (bytes.length !== input.sizeBytes) throw new Error("حجم المرفق غير متطابق"); const stored = await storagePut(`requests/${input.requestId}/${input.fileName}`, bytes, input.mimeType); const [row] = await db.insert(attachments).values({ requestId: input.requestId, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: bytes.length, storageKey: stored.key, uploadedBy: ctx.user.id }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "attachment.upload", "attachment", row.id, { requestId: input.requestId, fileName: input.fileName, sizeBytes: bytes.length }); return { ...row, url: stored.url }; }),
+  }),
+  reports: router({
+    financial: protectedProcedure.input(z.object({ companyId: z.number().int().positive().optional(), fiscalYearId: z.number().int().positive().optional() })).query(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("تصدير التقارير المالية متاح لمدير النظام فقط");
+      const db = await getDb(); if (!db) return [];
+      const conditions = [];
+      if (input.companyId) conditions.push(eq(disbursementRequests.companyId, input.companyId));
+      if (input.fiscalYearId) conditions.push(eq(disbursementRequests.fiscalYearId, input.fiscalYearId));
+      return db.select({ referenceNumber: disbursementRequests.referenceNumber, companyName: companies.name, fiscalYear: fiscalYears.year, beneficiaryName: beneficiaries.name, title: disbursementRequests.title, amount: disbursementRequests.amount, currency: disbursementRequests.currency, status: disbursementRequests.status, scheduledFor: disbursementRequests.scheduledFor, createdAt: disbursementRequests.createdAt }).from(disbursementRequests).innerJoin(companies, eq(disbursementRequests.companyId, companies.id)).innerJoin(fiscalYears, eq(disbursementRequests.fiscalYearId, fiscalYears.id)).innerJoin(beneficiaries, eq(disbursementRequests.beneficiaryId, beneficiaries.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(disbursementRequests.createdAt));
+    }),
+  }),
+  overdueAlerts: router({
+    getConfig: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إعدادات التنبيهات متاحة لمدير النظام فقط");
+      const db = await getDb(); if (!db) return null;
+      return (await db.select().from(overdueAlertConfigs).orderBy(desc(overdueAlertConfigs.createdAt)).limit(1))[0] ?? null;
+    }),
+    configure: protectedProcedure.input(z.object({ isEnabled: z.boolean(), cronExpression: z.string().regex(/^\d+\s+\d+\s+\d+\s+\*\s+\*\s+\*$/, "صيغة الجدولة غير صالحة") })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إعداد تنبيهات الطلبات المتأخرة متاح لمدير النظام فقط");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const userSession = requestUserSession(ctx.req.headers.cookie);
+      const current = (await db.select().from(overdueAlertConfigs).orderBy(desc(overdueAlertConfigs.createdAt)).limit(1))[0];
+      let taskUid = current?.scheduleCronTaskUid ?? null;
+      if (taskUid) {
+        await updateHeartbeatJob(taskUid, { cron: input.cronExpression, enable: input.isEnabled, path: OVERDUE_ALERT_PATH, method: "POST", description: "تنبيه يومي لمالك النظام بالطلبات المتأخرة" }, userSession);
+      } else {
+        const createdJob = await createHeartbeatJob({ name: "trezo-overdue-owner-alert", cron: input.cronExpression, path: OVERDUE_ALERT_PATH, method: "POST", description: "تنبيه يومي لمالك النظام بالطلبات المتأخرة" }, userSession);
+        taskUid = createdJob.taskUid;
+      }
+      if (current) {
+        await db.update(overdueAlertConfigs).set({ isEnabled: input.isEnabled, cronExpression: input.cronExpression, scheduleCronTaskUid: taskUid }).where(eq(overdueAlertConfigs.id, current.id));
+      } else {
+        await db.insert(overdueAlertConfigs).values({ isEnabled: input.isEnabled, cronExpression: input.cronExpression, scheduleCronTaskUid: taskUid, createdBy: ctx.user.id });
+      }
+      await writeEntityAudit(db, ctx.user.id, "overdue_alert.configure", "overdue_alert_config", current?.id ?? taskUid, { ...input, taskUid, timezone: "UTC", defaultCron: DEFAULT_OVERDUE_ALERT_CRON });
+      return { success: true, taskUid } as const;
+    }),
   }),
   requests: router({
     list: protectedProcedure.input(z.object({ status: statusSchema.optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select().from(disbursementRequests).where(input?.status ? eq(disbursementRequests.status, input.status) : undefined).orderBy(desc(disbursementRequests.createdAt)).limit(100); }),

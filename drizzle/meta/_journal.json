@@ -36,6 +36,20 @@
       "when": 1787009839163,
       "tag": "0004_unusual_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787037860500,
+      "tag": "0005_huge_cyclops",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787038485943,
+      "tag": "0006_spotty_sauron",
+      "breakpoints": true
     }
   ]
 }
