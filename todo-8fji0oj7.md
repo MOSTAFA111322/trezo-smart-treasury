@@ -16,3 +16,15 @@
 - [x] Add explicit feedback for unavailable workspace actions beyond calendar prerequisites, then re-validate navigation feedback.
 - [x] Add component-level tests for the dashboard data presentation, request confirmation, empty-state CTA, and attachment feedback.
 - [x] Add workflow component tests for the empty-state call to action, confirmation transition, and invalid attachment feedback.
+- [x] Audit the latest checkpoint and identify the highest-value remaining treasury workflow gap.
+- [x] Implement an exchange-rate readiness improvement so users can clearly act when a unified total lacks a required conversion rate.
+- [x] Improve the selected operational workspace flow with clear, responsive feedback and no dead-end actions.
+- [x] Make the dashboard unified-total warning directly navigate to exchange-rate settings and cover the handoff with a focused test.
+- [x] Add and run focused Vitest coverage plus desktop and mobile verification for the new improvement set.
+- [ ] Save a delivery checkpoint for the continued improvement pass.
+- [x] Visually verify the exchange-rate readiness banner and prefilling action in workspace settings on desktop and mobile.
+
+- [x] Visually exercise the missing-rate handoff from the dashboard into workspace settings and confirm the readiness banner and exchange-rate action are visible on desktop.
+- [x] Repeat the missing-rate handoff verification on a mobile viewport and capture the readiness banner and exchange-rate action state.
+- [x] Prevent unsafe guessed exchange-rate pairs when an incomplete unified total has no named missing currency; show a prefilled correction action only for an actionable named currency.
+- [x] Carry a named missing currency from the dashboard into settings and prefill its exchange-rate pair for correction.

@@ -1,7 +1,7 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock("@/lib/trpc", () => ({
 import Home from "./Home";
 
 describe("Home dashboard", () => {
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); window.history.replaceState({}, "", "/"); });
 
   it("does not show a false unified total when a currency conversion rate is missing", () => {
     render(<Home />);
@@ -46,4 +46,14 @@ describe("Home dashboard", () => {
     expect(screen.getByText(/أسعار مفقودة: USD/)).toBeInTheDocument();
     expect(screen.getByText("طلب متعدد العملات")).toBeInTheDocument();
   });
+
+  it("opens exchange-rate settings directly from an incomplete unified total", () => {
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("button", { name: "إعداد أسعار الصرف الناقصة" }));
+
+    expect(screen.getByTestId("workspace")).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("missingCurrency")).toBe("USD");
+  });
+
 });

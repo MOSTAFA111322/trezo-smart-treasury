@@ -23,11 +23,16 @@ const nav = [
   { id: "audit", label: "سجل التدقيق", icon: ShieldCheck },
 ];
 
+let openExchangeRateSettings: ((missingCurrency?: string) => void) | undefined;
+
 function StatCard({ label, value, meta, icon: Icon, color }: { label: string; value: string; meta: string; icon: typeof WalletCards; color: string }) {
-  return <div className="rounded-2xl border bg-card p-5 shadow-[0_10px_30px_rgba(18,70,55,.04)] transition-transform duration-200 hover:-translate-y-0.5">
+  const requiresRateSetup = label === "الإجمالي الموحد (ر.س)" && (meta.startsWith("أسعار مفقودة:") || value === "غير مكتمل");
+  const content = <>
     <div className="flex items-start justify-between gap-3"><div className={`flex h-11 w-11 items-center justify-center rounded-xl ${color}`}><Icon size={21} /></div><span className="text-xs font-semibold text-emerald-700">{meta}</span></div>
     <p className="mt-5 text-sm text-muted-foreground">{label}</p><p className="mt-1 font-display text-2xl font-extrabold tracking-tight">{value}</p>
-  </div>;
+  </>;
+  const className = "rounded-2xl border bg-card p-5 text-right shadow-[0_10px_30px_rgba(18,70,55,.04)] transition-transform duration-200 hover:-translate-y-0.5";
+  return requiresRateSetup ? <button type="button" onClick={() => openExchangeRateSettings?.(meta.startsWith("أسعار مفقودة:") ? meta.replace("أسعار مفقودة:", "").trim().split("،")[0] : undefined)} aria-label="إعداد أسعار الصرف الناقصة" className={`${className} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}>{content}</button> : <div className={className}>{content}</div>;
 }
 
 function Donut({ segments }: { segments: Array<{ label: string; percent: number; color: string }> }) {
@@ -59,7 +64,8 @@ function RequestModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
 export default function Home() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [active, setActive] = useState("dashboard");
+  const [active, setActive] = useState(() => new URLSearchParams(window.location.search).get("workspace") ?? "dashboard");
+  openExchangeRateSettings = (missingCurrency) => { if (missingCurrency) window.history.replaceState({}, "", `?workspace=settings&missingCurrency=${encodeURIComponent(missingCurrency)}`); setActive("settings"); };
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
