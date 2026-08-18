@@ -21,7 +21,7 @@
 - [x] Improve the selected operational workspace flow with clear, responsive feedback and no dead-end actions.
 - [x] Make the dashboard unified-total warning directly navigate to exchange-rate settings and cover the handoff with a focused test.
 - [x] Add and run focused Vitest coverage plus desktop and mobile verification for the new improvement set.
-- [ ] Save a delivery checkpoint for the continued improvement pass.
+- [x] Save a delivery checkpoint for the continued improvement pass.
 - [x] Visually verify the exchange-rate readiness banner and prefilling action in workspace settings on desktop and mobile.
 
 - [x] Visually exercise the missing-rate handoff from the dashboard into workspace settings and confirm the readiness banner and exchange-rate action are visible on desktop.
