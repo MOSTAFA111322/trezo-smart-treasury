@@ -3,7 +3,7 @@
 - [x] Review the current TREZO Smart Treasury implementation and identify the user's requested edit scope.
 - [x] Implement the user's requested project changes.
 - [x] Add or update automated tests for the implemented changes.
-- [ ] Save a delivery checkpoint for the verified updated experience.
+- [x] Save a delivery checkpoint for the verified updated experience.
 - [x] Audit existing request lifecycle, dashboard calculations, empty states, and navigation behavior for high-impact improvements.
 - [x] Improve the dashboard so its financial activity visualization and recent-request area derive from live treasury data.
 - [x] Strengthen the request workflow with visible validation feedback, loading feedback, and user-safe error handling.
