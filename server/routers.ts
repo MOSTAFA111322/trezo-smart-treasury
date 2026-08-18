@@ -39,7 +39,7 @@ async function hasEffectivePermission(db: NonNullable<Awaited<ReturnType<typeof 
 
 type RequestValidationDb = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "select">;
 
-async function validateRequestChannelAndBank(
+export async function validateRequestChannelAndBank(
   db: RequestValidationDb,
   channelId: number,
   beneficiaryId: number,
