@@ -32,8 +32,8 @@
 - [x] Confirm the daily owner-notification delivery method for overdue requests.
 - [x] Add durable manual exchange-rate attribution and approval metadata without overwriting prior approved rates.
 - [x] Add a scheduled, idempotent overdue-request alert workflow with visible delivery outcomes.
-- [ ] Configure the approved daily owner-alert job after deployment, using an explicit schedule and an idempotent callback.
+- [x] Configure the approved daily owner-alert job after deployment, using an explicit schedule and an idempotent callback.
 - [x] Add exportable financial reports filtered by company and fiscal year.
 - [x] Add focused tests and responsive verification for exchange rates, alerts, and report exports.
-- [ ] Save a delivery checkpoint for the treasury operations upgrade.
+- [x] Save a delivery checkpoint for the treasury operations upgrade.
 - [x] Add explicit approval status, approver, approval timestamp, and optional approval note to newly entered manual exchange-rate records, with tests.
