@@ -9,4 +9,11 @@ describe("operational role profiles", () => {
     expect(profiles.every((profile) => profile.label.length > 0 && profile.description.length > 0)).toBe(true);
     expect(new Set(profiles.map((profile) => profile.key)).size).toBe(profiles.length);
   });
+
+  it("defines the auditor as a post-execution review role", () => {
+    const profiles = getOperationalProfiles();
+    const keys = profiles.map((profile) => profile.key);
+    expect(keys.indexOf("auditor")).toBeGreaterThan(keys.indexOf("gm"));
+    expect(profiles.find((profile) => profile.key === "auditor")?.description).toContain("بعد التنفيذ");
+  });
 });

@@ -28,7 +28,7 @@ export const ROLE_PROFILE_DESCRIPTIONS: Record<OperationalRole, string> = {
   reviewer: "فحص المستندات والبيانات قبل رفع الطلب إلى مرحلة الاعتماد.",
   cfo: "اعتماد الطلبات ومراجعة السيولة والتقارير المالية.",
   gm: "اعتماد إداري نهائي وفق التفويض المؤسسي المعتمد.",
-  auditor: "قراءة سجل التدقيق والتقارير دون تعديل السجلات التشغيلية.",
+  auditor: "مراجعة الطلبات المنفذة وسجل التدقيق بعد التنفيذ دون تعديل السجلات التشغيلية.",
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<AppRole, readonly PermissionKey[]> = {
