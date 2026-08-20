@@ -42,4 +42,15 @@
 - [x] Add PDF export for filtered financial reports while preserving CSV export.
 - [x] Validate the built-in notification configuration flag with a focused Vitest test.
 - [x] Run full tests, type checks, and responsive visual verification for the three enhancements.
-- [ ] Save a delivery checkpoint for the three enhancements.
+- [x] Save a delivery checkpoint for the three enhancements.
+
+- [x] إضافة لوحة مؤشرات تشغيلية لصحة الإشعارات ومحاولات الإعادة ومعدلات الفشل.
+- [x] إضافة تنبيهات واضحة لأسعار الصرف المعلقة مع ملخص حالات المراجعة والاعتماد.
+- [x] تحسين التقارير الرسمية بإضافة ملخصات إجمالية وترويسة اعتماد ومعلومات نطاق التصفية.
+- [x] تأكيد مركز التدقيق الموجود وربطه بإجراءات الاعتماد وإعادة الإرسال والتصدير في واجهة العمل.
+- [x] تعزيز اختبارات التحسينات الجديدة والتحقق المتجاوب قبل إصدار checkpoint جديد.
+- [ ] حفظ checkpoint جديد بعد اكتمال حزمة المقترحات.
+
+- [x] إضافة ترويسة اعتماد رسمية واضحة داخل PDF وواجهة التقارير، مع نطاق التصفية وبيانات الإنشاء والاعتماد، ثم تغطيتها باختبار.
+- [x] ربط اعتماد سعر الصرف وإعادة إرسال التنبيه وتصدير التقرير بسجل التدقيق وعرضها في مركز التدقيق.
+- [x] إضافة اختبارات UI/خادم خاصة بمؤشرات الإشعارات وملخصات أسعار الصرف والتقارير، ثم تنفيذ تحقق بصري متجاوب جديد.

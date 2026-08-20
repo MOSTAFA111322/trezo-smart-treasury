@@ -238,6 +238,12 @@ export const appRouter = router({
       if (input.fiscalYearId) conditions.push(eq(disbursementRequests.fiscalYearId, input.fiscalYearId));
       return db.select({ referenceNumber: disbursementRequests.referenceNumber, companyName: companies.name, fiscalYear: fiscalYears.year, beneficiaryName: beneficiaries.name, title: disbursementRequests.title, amount: disbursementRequests.amount, currency: disbursementRequests.currency, status: disbursementRequests.status, scheduledFor: disbursementRequests.scheduledFor, createdAt: disbursementRequests.createdAt }).from(disbursementRequests).innerJoin(companies, eq(disbursementRequests.companyId, companies.id)).innerJoin(fiscalYears, eq(disbursementRequests.fiscalYearId, fiscalYears.id)).innerJoin(beneficiaries, eq(disbursementRequests.beneficiaryId, beneficiaries.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(disbursementRequests.createdAt));
     }),
+    logExport: protectedProcedure.input(z.object({ format: z.enum(["csv", "pdf"]), companyId: z.number().int().positive().optional(), fiscalYearId: z.number().int().positive().optional(), recordCount: z.number().int().min(0) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("تسجيل تصدير التقارير متاح لمدير النظام فقط");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      await writeEntityAudit(db, ctx.user.id, `report.export.${input.format}`, "financial_report", `${input.companyId ?? "all"}-${input.fiscalYearId ?? "all"}`, { companyId: input.companyId ?? null, fiscalYearId: input.fiscalYearId ?? null, recordCount: input.recordCount });
+      return { success: true } as const;
+    }),
   }),
   overdueAlerts: router({
     history: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional()).query(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("سجل التنبيهات متاح لمدير النظام فقط"); const db = await getDb(); if (!db) return []; return db.select().from(overdueAlertDeliveries).orderBy(desc(overdueAlertDeliveries.deliveryDate), desc(overdueAlertDeliveries.createdAt)).limit(input?.limit ?? 30); }),
