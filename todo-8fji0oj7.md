@@ -37,3 +37,9 @@
 - [x] Add focused tests and responsive verification for exchange rates, alerts, and report exports.
 - [x] Save a delivery checkpoint for the treasury operations upgrade.
 - [x] Add explicit approval status, approver, approval timestamp, and optional approval note to newly entered manual exchange-rate records, with tests.
+- [x] Add notification-history visibility and an idempotent retry control for failed overdue alerts.
+- [x] Add second-user approval workflow for manual exchange-rate records, including approval guards and audit metadata.
+- [x] Add PDF export for filtered financial reports while preserving CSV export.
+- [x] Validate the built-in notification configuration flag with a focused Vitest test.
+- [x] Run full tests, type checks, and responsive visual verification for the three enhancements.
+- [ ] Save a delivery checkpoint for the three enhancements.

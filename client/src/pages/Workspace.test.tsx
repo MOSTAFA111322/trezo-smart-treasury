@@ -46,8 +46,8 @@ describe("Workspace exchange-rate readiness", () => {
     expect(screen.getByLabelText("ملاحظة اعتماد سعر الصرف")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("سعر الصرف"), { target: { value: "1.25" } });
     fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: " " } });
-    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: "اعتماد لجنة الخزينة" } });
-    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeEnabled();
   });
 });

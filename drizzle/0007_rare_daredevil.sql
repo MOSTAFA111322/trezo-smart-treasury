@@ -1,0 +1,2 @@
+ALTER TABLE `exchange_rates` MODIFY COLUMN `exchange_rate_approval_status` enum('pending','approved','rejected','voided') NOT NULL DEFAULT 'pending';--> statement-breakpoint
+ALTER TABLE `overdue_alert_deliveries` ADD `lastAttemptAt` timestamp;

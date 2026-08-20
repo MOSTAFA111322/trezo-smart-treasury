@@ -16,16 +16,22 @@ function trpcProxy(path: string[] = []): object {
   }});
 }
 vi.mock("@/lib/trpc", () => ({ trpc: trpcProxy() }));
+const { pdfSave } = vi.hoisted(() => ({ pdfSave: vi.fn() }));
+vi.mock("jspdf", () => ({ jsPDF: class { setFontSize() {} text() {} line() {} setDrawColor() {} addPage() {} save(...args: unknown[]) { pdfSave(...args); } } }));
 import { FinancialReportsPanel } from "./FinancialReportsPanel";
 
 describe("FinancialReportsPanel", () => {
-  afterEach(() => { cleanup(); reportQuery.mockClear(); });
+  afterEach(() => { cleanup(); reportQuery.mockClear(); pdfSave.mockClear(); });
   it("applies company and fiscal-year filters to the export query", () => {
     render(<FinancialReportsPanel />);
     fireEvent.change(screen.getByLabelText("الشركة"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("السنة المالية"), { target: { value: "9" } });
     expect(reportQuery).toHaveBeenLastCalledWith({ companyId: 1, fiscalYearId: 9 });
     expect(screen.getByRole("button", { name: "تنزيل CSV" })).toBeEnabled();
+    const pdfButton = screen.getByRole("button", { name: "تنزيل PDF رسمي" });
+    expect(pdfButton).toBeEnabled();
+    fireEvent.click(pdfButton);
+    expect(pdfSave).toHaveBeenCalledWith("trezo-financial-report-company-year.pdf");
     expect(screen.getByText("1 سجل جاهز للتصدير وفق التصفية الحالية.")).toBeInTheDocument();
   });
 });

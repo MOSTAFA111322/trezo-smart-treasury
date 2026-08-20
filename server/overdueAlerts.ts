@@ -71,20 +71,21 @@ export const runOverdueOwnerAlert: RequestHandler = async (req, res) => {
         requestCount: rows.length,
         content,
         attempts: 1,
+        lastAttemptAt: new Date(),
       }).$returningId();
       deliveryId = created?.id;
     } else {
-      await db.update(overdueAlertDeliveries).set({ status: "pending", requestCount: rows.length, content, lastError: null, attempts: (existing?.attempts ?? 0) + 1 }).where(eq(overdueAlertDeliveries.id, deliveryId));
+      await db.update(overdueAlertDeliveries).set({ status: "pending", requestCount: rows.length, content, lastError: null, attempts: (existing?.attempts ?? 0) + 1, lastAttemptAt: new Date() }).where(eq(overdueAlertDeliveries.id, deliveryId));
     }
     if (!deliveryId) throw new Error("تعذر تسجيل نتيجة تنبيه الطلبات المتأخرة");
 
     const delivered = await notifyOwner({ title: rows.length ? `طلبات صرف متأخرة (${rows.length})` : "فحص الطلبات المتأخرة", content });
     if (!delivered) {
-      await db.update(overdueAlertDeliveries).set({ status: "failed", lastError: "تعذر إرسال الإشعار إلى مالك النظام" }).where(eq(overdueAlertDeliveries.id, deliveryId));
+      await db.update(overdueAlertDeliveries).set({ status: "failed", lastError: "تعذر إرسال الإشعار إلى مالك النظام", lastAttemptAt: new Date() }).where(eq(overdueAlertDeliveries.id, deliveryId));
       throw new Error("تعذر إرسال الإشعار إلى مالك النظام");
     }
 
-    await db.update(overdueAlertDeliveries).set({ status: "sent", sentAt: new Date(), lastError: null }).where(eq(overdueAlertDeliveries.id, deliveryId));
+    await db.update(overdueAlertDeliveries).set({ status: "sent", sentAt: new Date(), lastError: null, lastAttemptAt: new Date() }).where(eq(overdueAlertDeliveries.id, deliveryId));
     return res.json({ ok: true, deliveryId, requestCount: rows.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
