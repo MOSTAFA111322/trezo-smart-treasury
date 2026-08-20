@@ -29,3 +29,21 @@ describe("users.updateRole audit", () => {
 });
 
 export {};
+
+
+describe("audit.list filters", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("filters by action and date range", async () => {
+    const rows = [
+      { id: 1, action: "report.export.pdf", entityType: "financial_report", entityId: "1", createdAt: new Date("2026-08-10T12:00:00Z") },
+      { id: 2, action: "overdue_alert.retry", entityType: "overdue_alert_delivery", entityId: "2", createdAt: new Date("2026-08-18T12:00:00Z") },
+    ];
+    const fakeDb = { select: vi.fn(() => ({ from: vi.fn(() => ({ orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue(rows) })) })) })) };
+    vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
+    const caller = appRouter.createCaller(context());
+    const result = await caller.audit.list({ action: "overdue_alert.retry", from: new Date("2026-08-18T00:00:00Z"), to: new Date("2026-08-18T23:59:59Z") });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: 2, action: "overdue_alert.retry" });
+  });
+});

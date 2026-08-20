@@ -4,9 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const reportQuery = vi.fn(() => ({ data: [{ referenceNumber: "TRZ-001", companyName: "شركة الاختبار", fiscalYear: 2026, beneficiaryName: "المستفيد", title: "مصاريف", amount: "100", currency: "YER", status: "approved", scheduledFor: null, createdAt: new Date("2026-08-18T00:00:00Z") }], isLoading: false, error: null, refetch: vi.fn() }));
+const { logExportMutateAsync } = vi.hoisted(() => ({ logExportMutateAsync: vi.fn().mockResolvedValue({ success: true }) }));
 function trpcProxy(path: string[] = []): object {
   return new Proxy({}, { get: (_target, property) => {
-    if (property === "useMutation") return () => ({ mutateAsync: vi.fn().mockResolvedValue({ success: true }), isPending: false });
+    if (property === "useMutation") return () => ({ mutateAsync: logExportMutateAsync, isPending: false });
     if (property === "useQuery") {
       const key = path.join(".");
       if (key === "reports.financial") return reportQuery;
@@ -22,7 +23,7 @@ vi.mock("jspdf", () => ({ jsPDF: class { setFontSize() {} text(...args: unknown[
 import { FinancialReportsPanel } from "./FinancialReportsPanel";
 
 describe("FinancialReportsPanel", () => {
-  afterEach(() => { cleanup(); reportQuery.mockClear(); pdfSave.mockClear(); pdfText.mockClear(); });
+  afterEach(() => { cleanup(); reportQuery.mockClear(); logExportMutateAsync.mockReset().mockResolvedValue({ success: true }); pdfSave.mockClear(); pdfText.mockClear(); });
   it("applies company and fiscal-year filters to the export query", async () => {
     render(<FinancialReportsPanel />);
     fireEvent.change(screen.getByLabelText("الشركة"), { target: { value: "1" } });
@@ -37,5 +38,22 @@ describe("FinancialReportsPanel", () => {
     expect(pdfText).toHaveBeenCalledWith(expect.stringContaining("Scope: Company #1 | Fiscal year #9"), 14, 35);
     expect(pdfText).toHaveBeenCalledWith(expect.stringContaining("Approval status: System export audit recorded"), 14, 45);
     expect(screen.getByText("1 سجل جاهز للتصدير وفق التصفية الحالية.")).toBeInTheDocument();
+  });
+
+  it("blocks concurrent exports and surfaces a retryable export error", async () => {
+    logExportMutateAsync.mockImplementation(() => new Promise(() => {}));
+    render(<FinancialReportsPanel />);
+    const pdfButton = screen.getByRole("button", { name: "تنزيل PDF رسمي" });
+    fireEvent.click(pdfButton);
+    fireEvent.click(pdfButton);
+    expect(pdfButton).toBeDisabled();
+    expect(logExportMutateAsync).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    logExportMutateAsync.mockRejectedValueOnce(new Error("تعذر تسجيل الحدث"));
+    render(<FinancialReportsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "تنزيل PDF رسمي" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("تعذر تصدير PDF: تعذر تسجيل الحدث"));
+    expect(screen.getByRole("alert")).toHaveTextContent("إغلاق");
   });
 });

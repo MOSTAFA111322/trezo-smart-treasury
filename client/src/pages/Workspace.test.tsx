@@ -5,14 +5,18 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const emptyQuery = () => ({ data: [], isLoading: false, error: null, refetch: vi.fn() });
 const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, error: null });
+const auditRows = [{ id: 1, action: "report.export.pdf", entityType: "financial_report", entityId: "1", createdAt: new Date("2026-08-18T12:00:00Z") }];
 
 function trpcProxy(path: string[] = []): object {
   return new Proxy({}, {
     get: (_target, property) => {
       if (property === "useQuery") {
-        return () => path.join(".") === "dashboard.unified"
-          ? { data: { missingRates: ["USD"] }, isLoading: false, error: null, refetch: vi.fn() }
-          : emptyQuery();
+        return () => {
+          const key = path.join(".");
+          if (key === "dashboard.unified") return { data: { missingRates: ["USD"] }, isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "audit.list") return { data: auditRows, isLoading: false, error: null, refetch: vi.fn() };
+          return emptyQuery();
+        };
       }
       if (property === "useMutation") return mutation;
       if (property === "useUtils") return () => ({ requests: { list: { invalidate: vi.fn() } } });
@@ -36,6 +40,19 @@ describe("Workspace exchange-rate readiness", () => {
 
     expect(screen.getByLabelText("عملة الأساس")).toHaveValue("USD");
     expect(screen.getByLabelText("عملة التسعير")).toHaveValue("YER");
+  });
+
+  it("shows an explicit empty state when audit search has no matching rows", () => {
+    render(<Workspace active="audit" onBack={vi.fn()} onCreateRequest={vi.fn()} />);
+    expect(screen.getByText(/آخر العمليات المسجلة/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("إجراء التدقيق"), { target: { value: "report.export.pdf" } });
+    fireEvent.change(screen.getByLabelText("من تاريخ التدقيق"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("إلى تاريخ التدقيق"), { target: { value: "2026-08-31" } });
+    expect(screen.getByLabelText("إجراء التدقيق")).toHaveValue("report.export.pdf");
+    expect(screen.getByLabelText("من تاريخ التدقيق")).toHaveValue("2026-08-01");
+    expect(screen.getByLabelText("إلى تاريخ التدقيق")).toHaveValue("2026-08-31");
+    fireEvent.change(screen.getByLabelText("البحث في سجل التدقيق"), { target: { value: "لا يوجد هذا الحدث" } });
+    expect(screen.getByText("لا توجد نتائج مطابقة للبحث أو المرشحات الحالية. جرّب توسيع الفترة أو اختيار كل الإجراءات.")).toBeInTheDocument();
   });
 
   it("requires a manual attribution before enabling exchange-rate saving and shows owner alerts", () => {
