@@ -30,7 +30,8 @@ export function RequestDetailPanel({ rows, currencies }: Props) {
   const previewBankAccounts = trpc.entities.beneficiaryBankAccounts.list.useQuery({ beneficiaryId: selected?.beneficiaryId ?? 0 }, { enabled: Boolean(selected) });
   const channels = trpc.entities.channels.list.useQuery(undefined, { enabled: Boolean(selected) });
   const fiscalYears = trpc.settings.fiscalYears.useQuery(undefined, { enabled: Boolean(selected) && editing });
-  const update = trpc.requests.update.useMutation({ onSuccess: () => { setMessage("تم حفظ تعديل الطلب بنجاح."); setEditing(false); }, onError: (error) => setMessage(`تعذر تعديل الطلب: ${error.message}`) });
+  const utils = trpc.useUtils();
+  const update = trpc.requests.update.useMutation({ onSuccess: async () => { await utils.requests.list.invalidate(); setMessage("تم حفظ تعديل الطلب وتحديث البيانات بنجاح."); setEditing(false); }, onError: (error) => setMessage(`تعذر تعديل الطلب: ${error.message}`) });
 
   useEffect(() => {
     if (!selected) return;
