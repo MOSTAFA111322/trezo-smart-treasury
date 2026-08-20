@@ -72,6 +72,7 @@ describe("internal employees", () => {
   it("rejects non-admin access", async () => {
     const caller = appRouter.createCaller(context("user"));
     await expect(caller.employees.list()).rejects.toThrow("صلاحية المدير مطلوبة");
+    await expect(caller.employees.linkUser({ employeeId: 44, userId: 2 })).rejects.toThrow("صلاحية المدير مطلوبة");
   });
 });
 

@@ -140,6 +140,18 @@ export const appRouter = router({
         return { success: true, id: row?.id } as const;
       } catch (error) { if (isDuplicateKeyError(error)) throw new Error("الرقم الوظيفي مستخدم مسبقاً."); throw error; }
     }),
+    linkUser: protectedProcedure.input(z.object({ employeeId: z.number().int().positive(), userId: z.number().int().positive().nullable() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      if (input.userId !== null) {
+        const [targetUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
+        if (!targetUser) throw new Error("حساب الدخول غير موجود. يجب أن يسجل المستخدم الدخول مرة واحدة أولاً.");
+      }
+      const [previous] = await db.select({ linkedUserId: internalEmployees.linkedUserId }).from(internalEmployees).where(eq(internalEmployees.id, input.employeeId)).limit(1);
+      await db.update(internalEmployees).set({ linkedUserId: input.userId }).where(eq(internalEmployees.id, input.employeeId));
+      await writeEntityAudit(db, ctx.user.id, "internal_employee.link_user", "internal_employee", input.employeeId, { linkedUserId: input.userId }, previous);
+      return { success: true } as const;
+    }),
     update: protectedProcedure.input(z.object({ id: z.number().int().positive(), employeeNo: z.string().trim().min(1).max(64), fullName: z.string().trim().min(2).max(180), department: z.string().trim().max(160).optional(), jobTitle: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), operationalRole: z.enum(["accountant", "reviewer", "cfo", "gm", "auditor"]), isActive: z.boolean() })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");

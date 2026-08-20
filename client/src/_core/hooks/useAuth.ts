@@ -81,8 +81,12 @@ export function useAuth(options?: UseAuthOptions) {
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
-    if (redirectPath && window.location.pathname === redirectPath) return;
-
+        if (redirectPath && window.location.pathname === redirectPath) return;
+    try {
+      if (sessionStorage.getItem("trezo-logout-intent") === "1") return;
+    } catch {
+      // Continue with the normal redirect when sessionStorage is unavailable.
+    }
     // Navigate at this moment only. startLogin() mints the nonce + cookie itself.
     if (redirectPath) {
       window.location.href = redirectPath;

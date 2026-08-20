@@ -17,6 +17,11 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
   if (!isUnauthorized) return;
+  try {
+    if (sessionStorage.getItem("trezo-logout-intent") === "1") return;
+  } catch {
+    // Continue with the normal login fallback when sessionStorage is unavailable.
+  }
 
   startLogin();
 };
