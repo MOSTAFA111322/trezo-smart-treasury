@@ -23,6 +23,11 @@ describe("operational control summaries", () => {
     expect(screen.getByText(/100%/)).toBeInTheDocument();
     expect(screen.getByText("يتطلب إجراءً فورياً من المسؤول")).toBeInTheDocument();
   });
+  it("shows an internal intervention alert for failed overdue notification deliveries", () => {
+    render(<OverdueAlertsCard />);
+    expect(screen.getByText("يتطلب التنبيه اليومي تدخلاً")).toBeInTheDocument();
+    expect(screen.getByText(/يوجد 1 تشغيل فاشل/)).toBeInTheDocument();
+  });
   it("shows pending, approved, and rejected exchange-rate totals", () => {
     render(<ExchangeRatesPanel />);
     expect(screen.getAllByText("بانتظار اعتماد ثانٍ").length).toBeGreaterThan(0);
