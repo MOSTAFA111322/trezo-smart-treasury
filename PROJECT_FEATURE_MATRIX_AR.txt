@@ -1,0 +1,20 @@
+مصفوفة المقارنة الفنية
+
+المشروع المنقول من Lovable:
+المسارات: __root.tsx audit.tsx beneficiaries.tsx calendar.tsx channels.tsx companies.tsx index.tsx requests.$id.tsx requests.new.tsx requests.tsx settings.tsx 
+
+مراجع Supabase: approvals attachments audit_logs beneficiaries companies payment_calendar payment_channels payment_requests profiles 
+مراجع المصادقة: auth.getClaims auth.getSession 
+مراجع التخزين: 
+
+مشروع TREZO الحالي:
+صفحات/مكونات الطلبات: client/src/components/AuditTrailPanel.test.tsx client/src/components/AuditTrailPanel.tsx client/src/components/FinancialReportsPanel.test.tsx client/src/components/FinancialReportsPanel.tsx client/src/components/InternalEmployeesPanel.tsx client/src/components/OperationalRequestModal.test.tsx client/src/components/OperationalRequestModal.tsx client/src/components/RequestDetailPanel.test.tsx client/src/components/RequestDetailPanel.tsx client/src/components/TreasuryRequestWorkflow.test.tsx client/src/components/TreasuryRequestWorkflow.tsx client/src/pages/Home.test.tsx client/src/pages/Home.tsx client/src/pages/Workspace.test.tsx client/src/pages/Workspace.tsx 
+مسارات tRPC الرئيسية: permissions: users: entities: calendar: audit: settings: attachments: requests: 
+اختبارات الخادم: amountInWords.test.ts attachments.authorization.test.ts attachments.download.test.ts auth.logout.test.ts entities.crud.test.ts operationalRoles.test.ts permissions.test.ts permissions.update.test.ts reference.sequence.test.ts requests.permissions.test.ts requests.workflow.test.ts users.audit.test.ts employees.test.ts request.channel.validation.test.ts exchangeRates.approval.test.ts notifications.config.test.ts overdueAlerts.test.ts reports.export.test.ts 
+
+
+ملاحظات المطابقة:
+1) المشروعان يغطيان نطاق الخزينة نفسه، لذلك توجد قابلية للاستفادة من أفكار وواجهات المشروع المنقول.
+2) طبقة البيانات والمصادقة مختلفة جذرياً: Supabase/Auth/Storage مقابل Drizzle/MySQL/TiDB/Manus OAuth.
+3) نظام التوجيه مختلف: TanStack Router في الأرشيف مقابل shell مبني على Home/Workspace في TREZO.
+4) الدمج المباشر لملفات src أو migrations غير آمن؛ المطلوب نقل ميزة محددة مع إعادة ربطها بعقود tRPC الحالية.

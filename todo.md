@@ -391,3 +391,11 @@
 - [x] Final audit: verify sensitive-data exposure and operational handover readiness
 - [x] Final audit: complete responsive and browser regression review
 - [x] Final audit: produce readiness report and handover plan
+
+- [ ] Final audit follow-up: verify the published Requests page loading state with an authenticated browser session and distinguish session gating from a runtime defect
+
+- [ ] Compare the Lovable-derived project with the current TREZO project at file and feature level
+- [ ] Identify source paths, repositories, archives, and project ownership before any merge
+- [ ] Document schema, authentication, workflow, storage, and UI conflicts
+- [ ] Prepare a safe merge map for user approval; do not merge before approval
+- [ ] If approved, merge only selected non-conflicting features and rerun all checks
