@@ -110,7 +110,15 @@ describe("requests workflow routes", () => {
     expect(auditRows.map((row) => row.afterData)).toEqual([{ status: "rejected" }, { status: "draft" }]);
   });
 
-  it("rejects an invalid transition before writing workflow or audit rows", async () => {
+	 it("rejects a stale concurrent transition before writing workflow or audit rows", async () => {
+	    const tx = { update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 0 }]) })) })), insert: vi.fn() };
+	    const db = { select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
+	    vi.spyOn(database, "getDb").mockResolvedValue(db as never);
+	    const caller = appRouter.createCaller(context());
+	    await expect(caller.requests.transition({ requestId: 41, toStatus: "review" })).rejects.toThrow("تغيرت حالة الطلب قبل اعتماد العملية");
+	    expect(tx.insert).not.toHaveBeenCalled();
+	 });
+	 it("rejects an invalid transition before writing workflow or audit rows", async () => {
     const tx = { update: vi.fn(), insert: vi.fn() };
     const db = { select: vi.fn(() => selectChain([{ id: 41, status: "draft" }])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
     vi.spyOn(database, "getDb").mockResolvedValue(db as never);

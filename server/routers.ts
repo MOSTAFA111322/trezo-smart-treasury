@@ -327,7 +327,7 @@ export const appRouter = router({
       if (input.toStatus === "review") updates.submittedAt = new Date();
       if (input.toStatus === "approved") updates.approvedAt = new Date();
       if (input.toStatus === "executed") updates.executedAt = new Date();
-      await db.transaction(async (tx) => { await tx.update(disbursementRequests).set(updates).where(eq(disbursementRequests.id, input.requestId)); await writeWorkflowEvent(tx, input.requestId, request.status, input.toStatus, ctx.user.id, input.comment); });
+      await db.transaction(async (tx) => { const updated = await tx.update(disbursementRequests).set(updates).where(and(eq(disbursementRequests.id, input.requestId), eq(disbursementRequests.status, request.status))); if (updated[0]?.affectedRows !== 1) throw new Error("تغيرت حالة الطلب قبل اعتماد العملية؛ أعد المحاولة"); await writeWorkflowEvent(tx, input.requestId, request.status, input.toStatus, ctx.user.id, input.comment); });
       return { requestId: input.requestId, status: input.toStatus };
     }),
     update: protectedProcedure.input(z.object({ requestId: z.number().int().positive(), title: z.string().min(2).max(240), description: z.string().max(5000).optional(), amount: z.number().positive(), currency: z.string().min(3).max(8), beneficiaryId: z.number().int().positive(), bankAccountId: z.number().int().positive().nullable().optional(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive(), scheduledFor: z.date().nullable().optional() })).mutation(async ({ input, ctx }) => {

@@ -377,3 +377,17 @@
 - [x] تشخيص استمرار جلسة الدخول وتسجيل الخروج غير المستجيب
 - [x] إصلاح ما يمكن إصلاحه برمجياً وإضافة اختبارات مناسبة
 - [x] تشغيل TypeScript وVitest وProduction Build والتحقق من المعاينة
+
+## المراجعة النهائية الشاملة
+
+- [x] جرد الملفات والبنية والخدمات والاعتمادات وسجلات التشغيل
+- [x] مراجعة الصلاحيات ودورة الاعتماد والقنوات والبيانات الحساسة
+- [x] مراجعة واجهات العمل والتقارير والطباعة والجوال وسهولة الاستخدام
+- [x] إصلاح العيوب المؤكدة بأقل تغيير آمن
+- [x] تشغيل TypeScript وVitest وProduction Build والمعاينة المتجاوبة
+- [x] إعداد تقرير الجاهزية النهائي وخطة التسليم والاختبارات البشرية المتبقية
+
+- [x] Final audit: make workflow status transitions atomic against concurrent updates and add regression coverage
+- [x] Final audit: verify sensitive-data exposure and operational handover readiness
+- [x] Final audit: complete responsive and browser regression review
+- [x] Final audit: produce readiness report and handover plan

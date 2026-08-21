@@ -27,7 +27,7 @@ function mockTransitionDb(permissionAssigned: boolean) {
     select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue(result) }), innerJoin: () => ({ where: () => vi.fn().mockResolvedValue(result)() }) }) });
   }
   const tx = {
-    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }),
+    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) }) }),
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
   };
   return {
