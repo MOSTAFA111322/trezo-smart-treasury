@@ -1,7 +1,7 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const { proxy } = vi.hoisted(() => ({ proxy: (path: string[] = []): object => new Proxy({}, { get: (_target, property) => {
   if (property === "useQuery") return () => path.join(".") === "overdueAlerts.history" ? { data: [{ id: 1, status: "failed", attempts: 2, requestCount: 2, deliveryDate: "2026-08-19", lastError: "تعذر الاتصال", lastAttemptAt: new Date("2026-08-19T09:00:00Z") }], isLoading: false, error: null, refetch: vi.fn() } : path.join(".") === "settings.exchangeRates" ? { data: [{ id: 1, approvalStatus: "pending", baseCurrency: "USD", quoteCurrency: "YER", rate: "2450", effectiveAt: new Date(), source: "يدوي" }, { id: 2, approvalStatus: "approved", baseCurrency: "EUR", quoteCurrency: "YER", rate: "2800", effectiveAt: new Date(), source: "يدوي" }, { id: 3, approvalStatus: "rejected", baseCurrency: "SAR", quoteCurrency: "YER", rate: "650", effectiveAt: new Date(), source: "يدوي" }], isLoading: false, error: null } : { data: { isEnabled: true, scheduleCronTaskUid: "schedule-1" }, isLoading: false, error: null, refetch: vi.fn() };
@@ -34,5 +34,13 @@ describe("operational control summaries", () => {
     expect(screen.getByText("· يتطلب إجراءً")).toBeInTheDocument();
     expect(screen.getByText("معتمدة ونشطة")).toBeInTheDocument();
     expect(screen.getByText("مرفوضة")).toBeInTheDocument();
+  });
+  it("lets the second reviewer focus on pending exchange rates", () => {
+    render(<ExchangeRatesPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "عرض المعلقة فقط (1)" }));
+    expect(screen.getByRole("button", { name: "عرض جميع الأسعار" })).toBeInTheDocument();
+    expect(screen.getByText("USD / YER")).toBeInTheDocument();
+    expect(screen.queryByText("EUR / YER")).not.toBeInTheDocument();
+    expect(screen.queryByText("SAR / YER")).not.toBeInTheDocument();
   });
 });

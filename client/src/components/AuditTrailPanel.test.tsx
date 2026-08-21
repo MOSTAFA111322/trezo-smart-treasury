@@ -31,6 +31,19 @@ describe("AuditTrailPanel", () => {
     expect(screen.getByText("report.export.csv")).toBeInTheDocument();
   });
 
+  it("clears local and server-side audit filters", () => {
+    const onActionChange = vi.fn();
+    const onFromChange = vi.fn();
+    const onToChange = vi.fn();
+    render(<AuditTrailPanel rows={rows.slice(0, 1)} isLoading={false} error={null} onRetry={vi.fn()} action="report.export.csv" from="2026-08-01" to="2026-08-31" onActionChange={onActionChange} onFromChange={onFromChange} onToChange={onToChange} />);
+    fireEvent.change(screen.getByPlaceholderText("بحث نصي…"), { target: { value: "report" } });
+    fireEvent.click(screen.getByRole("button", { name: "مسح المرشحات" }));
+    expect(onActionChange).toHaveBeenCalledWith("");
+    expect(onFromChange).toHaveBeenCalledWith("");
+    expect(onToChange).toHaveBeenCalledWith("");
+    expect(screen.getByPlaceholderText("بحث نصي…")).toHaveValue("");
+  });
+
   it("logs an audit export before downloading CSV", async () => {
     const originalCreateObjectURL = URL.createObjectURL;
     const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -39,9 +52,10 @@ describe("AuditTrailPanel", () => {
     const createObjectURL = URL.createObjectURL as unknown as ReturnType<typeof vi.fn>;
     const revokeObjectURL = URL.revokeObjectURL as unknown as ReturnType<typeof vi.fn>;
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-    render(<AuditTrailPanel rows={rows.slice(0, 1)} isLoading={false} error={null} onRetry={vi.fn()} action="" from="" to="" onActionChange={vi.fn()} onFromChange={vi.fn()} onToChange={vi.fn()} />);
+    render(<AuditTrailPanel rows={rows.slice(0, 1)} isLoading={false} error={null} onRetry={vi.fn()} action="report.export.csv" from="2026-08-01" to="2026-08-31" onActionChange={vi.fn()} onFromChange={vi.fn()} onToChange={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText("بحث نصي…"), { target: { value: "request" } });
     fireEvent.click(screen.getByRole("button", { name: "تصدير سجل التدقيق CSV" }));
-    await waitFor(() => expect(logExport).toHaveBeenCalledWith({ recordCount: 1, filters: { search: undefined } }));
+    await waitFor(() => expect(logExport).toHaveBeenCalledWith({ recordCount: 1, filters: { search: "request", action: "report.export.csv", from: "2026-08-01", to: "2026-08-31" } }));
     expect(createObjectURL).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:test");

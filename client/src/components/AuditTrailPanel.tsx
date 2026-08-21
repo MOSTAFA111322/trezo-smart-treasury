@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, RefreshCw, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, RefreshCw, Search, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
 type AuditRow = {
@@ -36,6 +36,9 @@ export function AuditTrailPanel({ rows, isLoading, error, onRetry, action, from,
     const query = search.trim().toLocaleLowerCase();
     return rows.filter((row) => !query || [row.action, row.entityType, row.entityId ?? ""].some((value) => value.toLocaleLowerCase().includes(query)));
   }, [rows, search]);
+  useEffect(() => {
+    setPage(1);
+  }, [action, from, to]);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -44,7 +47,15 @@ export function AuditTrailPanel({ rows, isLoading, error, onRetry, action, from,
     const header = ["الإجراء", "نوع الكيان", "معرّف الكيان", "التاريخ"];
     const body = filteredRows.map((row) => [row.action, row.entityType, row.entityId ?? "", new Date(row.createdAt).toLocaleString("ar-SA")]);
     const csv = [header, ...body].map((line) => line.map(csvCell).join(",")).join("\n");
-    await logExport.mutateAsync({ recordCount: filteredRows.length, filters: { search: search.trim() || undefined } });
+    await logExport.mutateAsync({
+      recordCount: filteredRows.length,
+      filters: {
+        search: search.trim() || undefined,
+        action: action || undefined,
+        from: from || undefined,
+        to: to || undefined,
+      },
+    });
     const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -65,7 +76,7 @@ export function AuditTrailPanel({ rows, isLoading, error, onRetry, action, from,
         <input type="date" value={from} onChange={(event) => onFromChange(event.target.value)} aria-label="من تاريخ التدقيق" className="rounded-xl border bg-background px-3 py-2 text-sm"/>
         <input type="date" value={to} onChange={(event) => onToChange(event.target.value)} aria-label="إلى تاريخ التدقيق" className="rounded-xl border bg-background px-3 py-2 text-sm"/>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">يعرض المركز آخر السجلات المتاحة، مع تقسيمها إلى صفحات وتسجيل كل تصدير في سجل التدقيق.</p><button type="button" onClick={() => void exportCsv()} disabled={!filteredRows.length || logExport.isPending} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><Download size={15}/>{logExport.isPending ? "جارٍ تجهيز التصدير…" : "تصدير سجل التدقيق CSV"}</button></div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-muted-foreground">يعرض المركز السجلات المتاحة مع تقسيمها إلى صفحات، ويسجل التصدير مع كامل نطاق البحث والمرشحات.</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => { setSearch(""); setPage(1); onActionChange(""); onFromChange(""); onToChange(""); }} disabled={!search && !action && !from && !to} className="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40"><X size={14}/>مسح المرشحات</button><button type="button" onClick={() => void exportCsv()} disabled={!filteredRows.length || logExport.isPending} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"><Download size={15}/>{logExport.isPending ? "جارٍ تجهيز التصدير…" : "تصدير سجل التدقيق CSV"}</button></div></div>
       {logExport.error ? <p role="alert" className="mt-3 text-xs font-semibold text-destructive">تعذر تسجيل التصدير: {logExport.error.message}</p> : null}
     </div>
     {!rows.length ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">لا توجد أحداث تدقيق مسجلة بعد.</div> : !filteredRows.length ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-10 text-center text-sm text-amber-800 dark:text-amber-200">لا توجد نتائج مطابقة للبحث أو المرشحات الحالية. جرّب توسيع الفترة أو اختيار كل الإجراءات.</div> : <>
