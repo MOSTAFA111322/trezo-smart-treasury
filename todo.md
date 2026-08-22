@@ -400,4 +400,4 @@
 - [x] Prepare a safe merge map for user approval; do not merge before approval
 - [ ] If approved, merge only selected non-conflicting features and rerun all checks
 
-- [ ] Fix opaque overlay, modal panel, and field backgrounds in OperationalRequestModal.tsx only; verify preview
+- [x] Fix opaque overlay, modal panel, and field backgrounds in OperationalRequestModal.tsx only; verify preview
