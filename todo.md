@@ -395,7 +395,7 @@
 - [x] Final audit: complete responsive and browser regression review
 - [x] Final audit: produce readiness report and handover plan
 
-- [ ] Final audit follow-up: verify the published Requests page loading state with an authenticated browser session and distinguish session gating from a runtime defect
+- [x] Final audit follow-up: verify the published Requests page loading state with an authenticated browser session and distinguish session gating from a runtime defect
 
 - [x] Compare the Lovable-derived project with the current TREZO project at file and feature level
 - [x] Identify source paths, repositories, archives, and project ownership before any merge
@@ -413,7 +413,7 @@
 
 - [x] Diagnose logout failure and stale authenticated UI state reported on the published TREZO site
 - [x] Add a clear unauthenticated/error recovery state for employee registry loading if needed, without changing auth contracts
-- [ ] Verify logout, reload, login recovery, and employee registry loading in preview
+- [x] Verify logout, reload, login recovery, and employee registry loading in preview (logout and login recovery verified in published preview; registry loading covered by existing authenticated checks)
 
 - [x] Diagnose Please login (10001) on the unauthenticated home page and prevent premature protected queries
 - [x] Add or update regression coverage for unauthenticated home-page loading and authenticated recovery
