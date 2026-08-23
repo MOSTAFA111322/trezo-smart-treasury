@@ -22,13 +22,13 @@ function selectChain(value: unknown) {
   };
 }
 
-function mockTransitionDb(permissionAssigned: boolean) {
-  const request = { id: 4, status: "review", createdBy: 7 };
+function mockTransitionDb(permissionAssigned: boolean, route: unknown[] = [], status: "review" | "draft" = "review") {
+  const request = { id: 4, status, createdBy: 7 };
   const select = vi.fn();
   // transition order: request, saved route, user roles, active delegations, role, permission.
   const selectResults = [
     [request],
-    [],
+    route,
     permissionAssigned ? [{ name: "cfo" }] : [],
     [],
     [{ id: 2, name: "user" }],
@@ -60,6 +60,18 @@ describe("requests.transition permission route", () => {
     vi.mocked(getDb).mockResolvedValue(mockTransitionDb(true) as never);
     const caller = appRouter.createCaller(context("user") as never);
     await expect(caller.requests.transition({ requestId: 4, toStatus: "approved" })).resolves.toEqual({ requestId: 4, status: "approved" });
+  });
+
+  it("requires a reason when a policy skips an approval stage", async () => {
+    vi.mocked(getDb).mockResolvedValue(mockTransitionDb(true, [{ policyId: 3, stagesSnapshot: ["accountant", "cfo", "gm", "auditor"], allowSkip: true }], "draft") as never);
+    const caller = appRouter.createCaller(context("user") as never);
+    await expect(caller.requests.transition({ requestId: 4, toStatus: "approved" })).rejects.toThrow("سبب تجاوز مرحلة الاعتماد مطلوب");
+  });
+
+  it("allows a policy skip when an auditable reason is provided", async () => {
+    vi.mocked(getDb).mockResolvedValue(mockTransitionDb(true, [{ policyId: 3, stagesSnapshot: ["accountant", "cfo", "gm", "auditor"], allowSkip: true }], "draft") as never);
+    const caller = appRouter.createCaller(context("user") as never);
+    await expect(caller.requests.transition({ requestId: 4, toStatus: "approved", comment: "لا يوجد مراجع متاح خلال فترة السفر" })).resolves.toEqual({ requestId: 4, status: "approved" });
   });
 
   it("maps local operational roles to only their workflow permission", () => {

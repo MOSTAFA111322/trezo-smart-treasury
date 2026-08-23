@@ -25,6 +25,16 @@ type PendingTransition = {
   toStatus: TreasuryStatus;
 };
 
+const approvalStages = [
+  { key: "draft", label: "المحاسب" },
+  { key: "review", label: "المراجع" },
+  { key: "approved", label: "المدير المالي" },
+  { key: "executed", label: "المدير العام" },
+  { key: "audited", label: "المدقق" },
+] as const;
+
+const stageIndexByStatus: Record<string, number> = { draft: 0, review: 1, approved: 2, executed: 3, audited: 4 };
+
 const toneClasses = {
   neutral: "bg-slate-100 text-slate-700",
   warning: "bg-amber-100 text-amber-800",
@@ -135,6 +145,14 @@ export default function TreasuryRequestWorkflow({ rows, onCreateRequest }: { row
                   <p className="font-bold">{row.title}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{row.referenceNumber} · {formatTreasuryAmount(row.amount, row.currency)}</p>
                   <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${toneClasses[status.tone]}`}>{status.label}</span>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="مراحل اعتماد الطلب">
+                    {approvalStages.map((stage, index) => {
+                      const currentIndex = stageIndexByStatus[row.status] ?? -1;
+                      const complete = currentIndex > index || row.status === "audited";
+                      const current = currentIndex === index;
+                      return <span key={stage.key} className={`rounded-full px-2 py-1 text-[10px] font-bold ${complete ? "bg-emerald-100 text-emerald-800" : current ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300" : "bg-slate-100 text-slate-500"}`} title={current ? "المرحلة الحالية" : undefined}>{complete ? "✓ " : ""}{stage.label}</span>;
+                    })}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {action && <button type="button" disabled={transition.isPending} onClick={() => beginTransition(row.id, row.title, action.label, action.toStatus)} className="rounded-xl bg-[#176b54] px-4 py-2.5 text-xs font-bold text-white transition active:scale-[.97] disabled:opacity-50">{action.label}</button>}

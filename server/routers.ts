@@ -431,6 +431,12 @@ export const appRouter = router({
       const route = await getRequestApprovalRoute(db, input.requestId);
       const stageSet = new Set(route.stages);
       const routeAllows = route.allowSkip;
+      const isSkipTransition = !allowedTransitions[request.status].includes(input.toStatus) && routeAllows && (
+        (request.status === "draft" && input.toStatus === "approved" && !stageSet.has("reviewer"))
+        || (request.status === "review" && input.toStatus === "executed" && !stageSet.has("cfo"))
+        || (request.status === "draft" && input.toStatus === "executed" && !stageSet.has("reviewer") && !stageSet.has("cfo"))
+      );
+      if (isSkipTransition && !input.comment?.trim()) throw new Error("سبب تجاوز مرحلة الاعتماد مطلوب");
       const transitionAllowed = allowedTransitions[request.status].includes(input.toStatus)
         || (routeAllows && request.status === "draft" && input.toStatus === "approved" && !stageSet.has("reviewer"))
         || (routeAllows && request.status === "review" && input.toStatus === "executed" && !stageSet.has("cfo"))
