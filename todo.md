@@ -424,6 +424,6 @@
 - [x] Add employee credential management and active-account controls
 - [ ] Test local login, logout, authorization, audit attribution, and reactivation
 - [x] Diagnose Yusuf local login returning to the login screen immediately
-- [ ] Add regression coverage for successful local login session persistence
+- [x] Add regression coverage for successful local login session persistence
 - [x] Diagnose admin-only query invoked for Yusuf's non-admin local account
 - [x] Add regression coverage that non-admin local users are not treated as admins

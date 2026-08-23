@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import * as database from "./db";
 import type { TrpcContext } from "./_core/context";
-import { hashSecret, normalizeUsername, verifySecret } from "./localAuth";
+import { createLocalSession, getLocalUser, hashSecret, normalizeUsername, verifySecret, LOCAL_SESSION_COOKIE } from "./localAuth";
 
 type TestUser = NonNullable<TrpcContext["user"]>;
 
@@ -36,6 +36,44 @@ describe("local account authentication", () => {
   });
 
   afterEach(() => vi.restoreAllMocks());
+
+  it("creates a local session cookie that resolves back to the active user", async () => {
+    let selectCall = 0;
+    let issuedToken = "";
+    const now = new Date();
+    const expectedUser = { id: 7, openId: "local:yusuf", name: "يوسف", email: null, loginMethod: "local", role: "user", createdAt: now, updatedAt: now, lastSignedIn: now };
+    const fakeDb = {
+      insert: vi.fn(() => ({
+        values: vi.fn((values: Record<string, unknown>) => {
+          const tokenHash = values.tokenHash;
+          expect(typeof tokenHash).toBe("string");
+          expect(tokenHash).not.toHaveLength(0);
+          return Promise.resolve(undefined);
+        }),
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockImplementation(async () => {
+              selectCall += 1;
+              if (selectCall === 1) return [{ sessionId: 11, userId: 7, expiresAt: new Date(Date.now() + 60_000) }];
+              if (selectCall === 2) return [{ isActive: true }];
+              return [expectedUser];
+            }),
+          })),
+        })),
+      })),
+    };
+    vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
+
+    const req = { protocol: "https", headers: {}, cookies: {} } as TrpcContext["req"];
+    const res = { cookie: vi.fn((_name: string, token: string) => { issuedToken = token; }) } as unknown as TrpcContext["res"];
+    await createLocalSession(req, res, 7);
+    expect(res.cookie).toHaveBeenCalledWith(LOCAL_SESSION_COOKIE, expect.any(String), expect.objectContaining({ maxAge: expect.any(Number) }));
+
+    req.cookies = { [LOCAL_SESSION_COOKIE]: issuedToken };
+    await expect(getLocalUser(req)).resolves.toMatchObject({ id: 7, openId: "local:yusuf", loginMethod: "local" });
+  });
 
   it("allows an admin to reactivate and deactivate a local account", async () => {
     const updateValues: Array<Record<string, unknown>> = [];
