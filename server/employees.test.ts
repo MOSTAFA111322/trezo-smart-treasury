@@ -30,6 +30,7 @@ describe("internal employees", () => {
 
   it("creates and updates an employee with an operational role", async () => {
     const auditValues: Array<Record<string, unknown>> = [];
+    const updateValues: Array<Record<string, unknown>> = [];
     const fakeDb = {
       insert: vi.fn((...args: unknown[]) => {
         const callNumber = fakeDb.insert.mock.calls.length;
@@ -44,7 +45,7 @@ describe("internal employees", () => {
         })),
       })),
       update: vi.fn(() => ({
-        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+        set: vi.fn((values: Record<string, unknown>) => { updateValues.push(values); return { where: vi.fn().mockResolvedValue(undefined) }; }),
       })),
     };
     vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
@@ -66,6 +67,27 @@ describe("internal employees", () => {
       operationalRole: "cfo",
       isActive: true,
     })).resolves.toEqual({ success: true });
+    await expect(caller.employees.update({
+      id: 44,
+      employeeNo: "EMP-001",
+      fullName: "أحمد المحاسب",
+      department: "الخزينة",
+      jobTitle: "محاسب أول",
+      operationalRole: "cfo",
+      isActive: false,
+    })).resolves.toEqual({ success: true });
+    expect(updateValues.at(-1)).toMatchObject({ isActive: false });
+
+    await expect(caller.employees.update({
+      id: 44,
+      employeeNo: "EMP-001",
+      fullName: "أحمد المحاسب",
+      department: "الخزينة",
+      jobTitle: "محاسب أول",
+      operationalRole: "cfo",
+      isActive: true,
+    })).resolves.toEqual({ success: true });
+    expect(updateValues.at(-1)).toMatchObject({ isActive: true });
     expect(fakeDb.update).toHaveBeenCalled();
   });
 

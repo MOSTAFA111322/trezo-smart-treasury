@@ -412,6 +412,9 @@
 - [x] Add a clear unauthenticated/error recovery state for employee registry loading if needed, without changing auth contracts
 - [ ] Verify logout, reload, login recovery, and employee registry loading in preview
 
-- [ ] Diagnose Please login (10001) on the unauthenticated home page and prevent premature protected queries
-- [ ] Add or update regression coverage for unauthenticated home-page loading and authenticated recovery
-- [ ] Verify the fix in preview and rerun TypeScript, Vitest, and production build
+- [x] Diagnose Please login (10001) on the unauthenticated home page and prevent premature protected queries
+- [x] Add or update regression coverage for unauthenticated home-page loading and authenticated recovery
+- [x] Verify the fix in preview and rerun TypeScript, Vitest, and production build
+- [x] Diagnose why a disabled internal employee cannot be reactivated from the registry
+- [x] Add a visible reactivation action and clarify internal employee status versus Manus OAuth login
+- [ ] Test disable/reactivate flows without changing auth, database schema, or workflow
