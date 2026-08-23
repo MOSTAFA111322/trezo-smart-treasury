@@ -52,10 +52,13 @@ describe("requests workflow routes", () => {
       .mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }]))
       .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([]))
+      .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([{ id: 41, status: "review" }]))
       .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([]))
+      .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([{ id: 41, status: "approved" }]))
+      .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([]))
       .mockImplementationOnce(() => selectChain([]));
     vi.spyOn(database, "getDb").mockResolvedValue(db as never);
@@ -81,7 +84,7 @@ describe("requests workflow routes", () => {
       insert: vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (values.toStatus) workflowRows.push(values); if (typeof values.action === "string") auditRows.push(values); return { $returningId: vi.fn().mockResolvedValue([{ id: 88 }]) }; }) })),
     };
     const db = {
-      select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 88, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 88, status: "review" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 88, status: "approved" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])),
+      select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 88, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 88, status: "review" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 88, status: "approved" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])),
       transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)),
     };
     vi.spyOn(database, "getDb").mockResolvedValue(db as never);
@@ -99,7 +102,7 @@ describe("requests workflow routes", () => {
     const workflowRows: Array<Record<string, unknown>> = [];
     const auditRows: Array<Record<string, unknown>> = [];
     const tx = { update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) })) })), insert: vi.fn(() => ({ values: vi.fn((values: Record<string, unknown>) => { if (values.toStatus) workflowRows.push(values); if (typeof values.action === "string") auditRows.push(values); return { $returningId: vi.fn().mockResolvedValue([{ id: 1 }]) }; }) })) };
-    const db = { select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 41, status: "rejected" }])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
+    const db = { select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([{ id: 41, status: "rejected" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
     vi.spyOn(database, "getDb").mockResolvedValue(db as never);
     const caller = appRouter.createCaller(context());
     await expect(caller.requests.transition({ requestId: 41, toStatus: "rejected", comment: "مرفوض للاختبار" })).resolves.toMatchObject({ status: "rejected" });
@@ -112,7 +115,7 @@ describe("requests workflow routes", () => {
 
 	 it("rejects a stale concurrent transition before writing workflow or audit rows", async () => {
 	    const tx = { update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 0 }]) })) })), insert: vi.fn() };
-	    const db = { select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
+	    const db = { select: vi.fn().mockImplementationOnce(() => selectChain([{ id: 41, status: "draft" }])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])).mockImplementationOnce(() => selectChain([])), transaction: vi.fn(async (callback: (value: typeof tx) => Promise<unknown>) => callback(tx)) };
 	    vi.spyOn(database, "getDb").mockResolvedValue(db as never);
 	    const caller = appRouter.createCaller(context());
 	    await expect(caller.requests.transition({ requestId: 41, toStatus: "review" })).rejects.toThrow("تغيرت حالة الطلب قبل اعتماد العملية");

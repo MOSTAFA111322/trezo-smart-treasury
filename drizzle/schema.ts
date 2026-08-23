@@ -163,6 +163,42 @@ export const sequenceSettings = mysqlTable("sequence_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({ fiscalIdx: uniqueIndex("sequence_fiscal_idx").on(table.fiscalYearId) }));
 
+export const approvalStage = mysqlEnum("approval_stage", ["accountant", "reviewer", "cfo", "gm", "auditor"]);
+
+export const approvalPolicies = mysqlTable("approval_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 160 }).notNull(),
+  companyId: int("companyId"),
+  minAmount: decimal("minAmount", { precision: 18, scale: 4 }),
+  maxAmount: decimal("maxAmount", { precision: 18, scale: 4 }),
+  stages: json("stages").notNull(),
+  allowSkip: boolean("allowSkip").default(false).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ companyIdx: index("approval_policies_company_idx").on(table.companyId), activeIdx: index("approval_policies_active_idx").on(table.isActive) }));
+
+export const requestApprovalRoutes = mysqlTable("request_approval_routes", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("requestId").notNull().unique(),
+  policyId: int("policyId"),
+  stagesSnapshot: json("stagesSnapshot").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const approvalDelegations = mysqlTable("approval_delegations", {
+  id: int("id").autoincrement().primaryKey(),
+  fromRole: approvalStage.notNull(),
+  delegateUserId: int("delegateUserId").notNull(),
+  startsAt: timestamp("startsAt").notNull(),
+  endsAt: timestamp("endsAt").notNull(),
+  reason: text("reason").notNull(),
+  createdBy: int("createdBy").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ roleIdx: index("approval_delegations_role_idx").on(table.fromRole), dateIdx: index("approval_delegations_date_idx").on(table.startsAt, table.endsAt) }));
+
 export const disbursementStatus = mysqlEnum("disbursement_status", ["draft", "review", "approved", "executed", "rejected"]);
 export const workflowFromStatus = mysqlEnum("workflow_from_status", ["draft", "review", "approved", "executed", "rejected"]);
 export const workflowToStatus = mysqlEnum("workflow_to_status", ["draft", "review", "approved", "executed", "rejected"]);

@@ -5,7 +5,7 @@ import { parse as parseCookie } from "cookie";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, localAuthAccounts, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
+import { approvalDelegations, approvalPolicies, attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, localAuthAccounts, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, requestApprovalRoutes, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
@@ -17,6 +17,32 @@ import { notifyOwner } from "./_core/notification";
 import { createLocalSession, hashSecret, normalizeUsername, resetLocalLoginFailures, revokeLocalSession, verifySecret, markLocalLoginFailure, LOCAL_SESSION_COOKIE } from "./localAuth";
 
 const statuses = ["draft", "review", "approved", "executed", "rejected"] as const;
+const approvalStages = ["accountant", "reviewer", "cfo", "gm", "auditor"] as const;
+const DEFAULT_APPROVAL_ROUTE = [...approvalStages] as string[];
+type ApprovalStage = (typeof approvalStages)[number];
+function normalizeApprovalStages(value: unknown): ApprovalStage[] { if (!Array.isArray(value)) return [...approvalStages]; const valid = value.filter((stage): stage is ApprovalStage => typeof stage === "string" && (approvalStages as readonly string[]).includes(stage)); return valid.length ? Array.from(new Set(valid)) : [...approvalStages]; }
+type ApprovalRouteDb = Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "select">;
+async function resolveApprovalRoute(db: ApprovalRouteDb, companyId: number, amount: number) {
+  const policies = await db.select().from(approvalPolicies).where(eq(approvalPolicies.isActive, true));
+  const policyRows = Array.isArray(policies) ? policies : [];
+  const matching = policyRows.find((policy) => {
+    const companyMatches = policy.companyId === null || policy.companyId === companyId;
+    const minMatches = policy.minAmount === null || amount >= Number(policy.minAmount);
+    const maxMatches = policy.maxAmount === null || amount <= Number(policy.maxAmount);
+    return companyMatches && minMatches && maxMatches;
+  });
+  return { policyId: matching?.id ?? null, stages: normalizeApprovalStages(matching?.stages), allowSkip: matching?.allowSkip ?? false };
+}
+function defaultApprovalRoute() { return { policyId: null, stages: [...approvalStages], allowSkip: false }; }
+async function getRequestApprovalRoute(db: ApprovalRouteDb, requestId: number) {
+  try {
+    const [route] = await db.select().from(requestApprovalRoutes).where(eq(requestApprovalRoutes.requestId, requestId)).limit(1);
+    if (!route) return defaultApprovalRoute();
+    return { policyId: route.policyId, stages: normalizeApprovalStages(route.stagesSnapshot), allowSkip: true };
+  } catch {
+    return defaultApprovalRoute();
+  }
+}
 const statusSchema = z.enum(statuses);
 function requestUserSession(cookieHeader?: string): string { return parseCookie(cookieHeader ?? "")[COOKIE_NAME] ?? ""; }
 export function canAccessOwnedRequest(userRole: string, userId: number, ownerId: number | null | undefined) { return userRole === "admin" || ownerId === userId; }
@@ -346,6 +372,37 @@ export const appRouter = router({
       return { success: true, taskUid } as const;
     }),
   }),
+  approval: router({
+    policies: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إدارة سياسات الاعتماد متاحة لمدير النظام فقط");
+      const db = await getDb(); if (!db) return [];
+      return db.select().from(approvalPolicies).orderBy(desc(approvalPolicies.createdAt));
+    }),
+    createPolicy: protectedProcedure.input(z.object({ name: z.string().trim().min(2).max(160), companyId: z.number().int().positive().nullable().optional(), minAmount: z.number().nonnegative().optional(), maxAmount: z.number().positive().optional(), stages: z.array(z.enum(approvalStages)).min(1), allowSkip: z.boolean().default(false) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إدارة سياسات الاعتماد متاحة لمدير النظام فقط");
+      if (input.maxAmount !== undefined && input.minAmount !== undefined && input.maxAmount < input.minAmount) throw new Error("الحد الأعلى يجب أن يكون أكبر من أو يساوي الحد الأدنى");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const stages = normalizeApprovalStages(input.stages);
+      const [created] = await db.insert(approvalPolicies).values({ name: input.name, companyId: input.companyId ?? null, minAmount: input.minAmount?.toFixed(4), maxAmount: input.maxAmount?.toFixed(4), stages, allowSkip: input.allowSkip, createdBy: ctx.user.id }).$returningId();
+      if (!created?.id) throw new Error("تعذر إنشاء سياسة الاعتماد");
+      await writeEntityAudit(db, ctx.user.id, "approval.policy.create", "approval_policy", created.id, { ...input, stages });
+      return { id: created.id } as const;
+    }),
+    updatePolicy: protectedProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().trim().min(2).max(160).optional(), isActive: z.boolean().optional(), allowSkip: z.boolean().optional(), stages: z.array(z.enum(approvalStages)).min(1).optional() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إدارة سياسات الاعتماد متاحة لمدير النظام فقط");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [before] = await db.select().from(approvalPolicies).where(eq(approvalPolicies.id, input.id)).limit(1); if (!before) throw new Error("سياسة الاعتماد غير موجودة");
+      const updates: Partial<typeof approvalPolicies.$inferInsert> = {}; if (input.name !== undefined) updates.name = input.name; if (input.isActive !== undefined) updates.isActive = input.isActive; if (input.allowSkip !== undefined) updates.allowSkip = input.allowSkip; if (input.stages !== undefined) updates.stages = normalizeApprovalStages(input.stages);
+      await db.update(approvalPolicies).set(updates).where(eq(approvalPolicies.id, input.id)); await writeEntityAudit(db, ctx.user.id, "approval.policy.update", "approval_policy", input.id, updates, before as unknown as Record<string, unknown>); return { success: true } as const;
+    }),
+    delegations: protectedProcedure.query(async ({ ctx }) => { if (ctx.user.role !== "admin") throw new Error("إدارة التفويضات متاحة لمدير النظام فقط"); const db = await getDb(); if (!db) return []; return db.select().from(approvalDelegations).orderBy(desc(approvalDelegations.createdAt)); }),
+    createDelegation: protectedProcedure.input(z.object({ fromRole: z.enum(approvalStages), delegateUserId: z.number().int().positive(), startsAt: z.date(), endsAt: z.date(), reason: z.string().trim().min(5).max(1000) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("إدارة التفويضات متاحة لمدير النظام فقط"); if (input.endsAt <= input.startsAt) throw new Error("تاريخ نهاية التفويض يجب أن يكون بعد بدايته");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [delegate] = await db.select({ id: users.id }).from(users).where(eq(users.id, input.delegateUserId)).limit(1); if (!delegate) throw new Error("المستخدم المفوّض غير موجود");
+      const [created] = await db.insert(approvalDelegations).values({ ...input, createdBy: ctx.user.id }).$returningId(); if (!created?.id) throw new Error("تعذر إنشاء التفويض"); await writeEntityAudit(db, ctx.user.id, "approval.delegation.create", "approval_delegation", created.id, { ...input, secret: undefined }); return { id: created.id } as const;
+    }),
+    deactivateDelegation: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("إدارة التفويضات متاحة لمدير النظام فقط"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); await db.update(approvalDelegations).set({ isActive: false }).where(eq(approvalDelegations.id, input.id)); await writeEntityAudit(db, ctx.user.id, "approval.delegation.deactivate", "approval_delegation", input.id, { isActive: false }); return { success: true } as const; }),
+  }),
   requests: router({
     list: protectedProcedure.input(z.object({ status: statusSchema.optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select().from(disbursementRequests).where(input?.status ? eq(disbursementRequests.status, input.status) : undefined).orderBy(desc(disbursementRequests.createdAt)).limit(100); }),
     createDraft: protectedProcedure.input(requestInput).mutation(async ({ input, ctx }) => {
@@ -361,6 +418,8 @@ export const appRouter = router({
         const sequenceUpdate = await tx.update(sequenceSettings).set({ nextValue: sequence.nextValue + 1 }).where(and(eq(sequenceSettings.id, sequence.id), eq(sequenceSettings.nextValue, sequence.nextValue))); if (sequenceUpdate[0]?.affectedRows !== 1) throw new Error("تعذر حجز الرقم المرجعي؛ أعد المحاولة");
         const [created] = await tx.insert(disbursementRequests).values({ ...input, bankAccountId: normalizedBankAccountId, amount: input.amount.toFixed(4), amountInWords: amountInArabicWords(input.amount, input.currency), referenceNumber, createdBy: ctx.user.id, status: "draft" }).$returningId();
         if (!created?.id) throw new Error("تعذر إنشاء الطلب");
+        const route = await resolveApprovalRoute(tx, input.companyId, input.amount);
+        await tx.insert(requestApprovalRoutes).values({ requestId: created.id, policyId: route.policyId, stagesSnapshot: route.stages });
         await writeWorkflowEvent(tx, created.id, null, "draft", ctx.user.id, "إنشاء مسودة");
         return { id: created.id, referenceNumber };
       });
@@ -369,7 +428,14 @@ export const appRouter = router({
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
       const [request] = await db.select().from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1);
       if (!request) throw new Error("طلب الصرف غير موجود");
-      if (!allowedTransitions[request.status].includes(input.toStatus)) throw new Error("انتقال الحالة غير مسموح");
+      const route = await getRequestApprovalRoute(db, input.requestId);
+      const stageSet = new Set(route.stages);
+      const routeAllows = route.allowSkip;
+      const transitionAllowed = allowedTransitions[request.status].includes(input.toStatus)
+        || (routeAllows && request.status === "draft" && input.toStatus === "approved" && !stageSet.has("reviewer"))
+        || (routeAllows && request.status === "review" && input.toStatus === "executed" && !stageSet.has("cfo"))
+        || (routeAllows && request.status === "draft" && input.toStatus === "executed" && !stageSet.has("reviewer") && !stageSet.has("cfo"));
+      if (!transitionAllowed) throw new Error("انتقال الحالة غير مسموح");
       const roleNames = new Set<string>();
       if (ctx.user.role !== "admin") {
         const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
@@ -381,14 +447,20 @@ export const appRouter = router({
             if (linkedEmployee?.isActive) roleNames.add(linkedEmployee.operationalRole);
           }
         }
+        const now = new Date();
+        const delegations = await db.select().from(approvalDelegations).where(and(eq(approvalDelegations.delegateUserId, ctx.user.id), eq(approvalDelegations.isActive, true)));
+        for (const delegation of Array.isArray(delegations) ? delegations : []) {
+          if (delegation.startsAt <= now && delegation.endsAt >= now) roleNames.add(delegation.fromRole);
+        }
       }
       const requiredPermission = requiredPermissionForTransition(input.toStatus);
       const hasOperationalPermission = requiredPermission ? Array.from(roleNames).some((roleName) => operationalRoleGrantsPermission(roleName, requiredPermission)) : false;
       if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission)) && !hasOperationalPermission && ctx.user.role !== "admin") throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
       if (input.toStatus === "review" && request.status === "draft" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
       if (input.toStatus === "review" && request.status === "review" && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("تأكيد المراجعة متاح للمراجع فقط");
-      if (input.toStatus === "approved" && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
-      if (input.toStatus === "executed" && !roleNames.has("gm") && ctx.user.role !== "admin") throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
+      if (input.toStatus === "approved" && stageSet.has("cfo") && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
+      if (input.toStatus === "executed" && stageSet.has("gm") && !roleNames.has("gm") && ctx.user.role !== "admin") throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
+      if (input.toStatus === "executed" && !stageSet.has("gm") && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("التنفيذ المفوض متاح للمدير المالي أو من ينوب عنه فقط");
       if (input.toStatus === "draft" && !roleNames.has("accountant") && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("إعادة الطلب للمسودة متاحة للمحاسب أو المراجع فقط");
       const updates: Partial<typeof disbursementRequests.$inferInsert> = { status: input.toStatus };
       if (input.toStatus === "review") updates.submittedAt = new Date();

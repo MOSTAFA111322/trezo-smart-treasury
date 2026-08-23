@@ -13,19 +13,30 @@ function context(role: "user" | "admin", id = 7) {
   };
 }
 
+function selectChain(value: unknown) {
+  return {
+    from: () => ({
+      where: () => ({ limit: vi.fn().mockResolvedValue(value) }),
+      innerJoin: () => ({ where: vi.fn().mockResolvedValue(value) }),
+    }),
+  };
+}
+
 function mockTransitionDb(permissionAssigned: boolean) {
   const request = { id: 4, status: "review", createdBy: 7 };
+  const select = vi.fn();
+  // transition order: request, saved route, user roles, active delegations, role, permission.
   const selectResults = [
     [request],
+    [],
     permissionAssigned ? [{ name: "cfo" }] : [],
+    [],
     [{ id: 2, name: "user" }],
     [{ id: 9, code: "requests.approve" }],
     permissionAssigned ? [{ roleId: 2 }] : [],
   ];
-  const select = vi.fn();
-  for (const result of selectResults) {
-    select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue(result) }), innerJoin: () => ({ where: () => vi.fn().mockResolvedValue(result)() }) }) });
-  }
+  for (const result of selectResults) select.mockReturnValueOnce(selectChain(result));
+
   const tx = {
     update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) }) }),
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),

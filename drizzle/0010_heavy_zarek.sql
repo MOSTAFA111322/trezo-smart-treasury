@@ -1,0 +1,1 @@
+ALTER TABLE `request_approval_routes` DROP INDEX `request_approval_routes_request_idx`;
