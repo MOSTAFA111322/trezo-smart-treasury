@@ -15,6 +15,7 @@ function trpcProxy(path: string[] = []): object {
           const key = path.join(".");
           if (key === "dashboard.unified") return { data: { missingRates: ["USD"] }, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "audit.list") return { data: auditRows, isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "permissions.list") return { data: { roleId: null, keys: [] }, isLoading: false, error: null, refetch: vi.fn() };
           return emptyQuery();
         };
       }
@@ -66,5 +67,11 @@ describe("Workspace exchange-rate readiness", () => {
     expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: "اعتماد لجنة الخزينة" } });
     expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeEnabled();
+  });
+
+  it("does not render the employee administration panel for a non-admin user", () => {
+    render(<Workspace active="users" onBack={vi.fn()} onCreateRequest={vi.fn()} isAdmin={false} />);
+    expect(screen.getByText("غير مفعّلة")).toBeInTheDocument();
+    expect(screen.queryByText("الموظفون والحسابات")).not.toBeInTheDocument();
   });
 });
