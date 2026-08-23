@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import * as database from "./db";
 import type { TrpcContext } from "./_core/context";
+import { hashSecret, normalizeUsername, verifySecret } from "./localAuth";
 
 type TestUser = NonNullable<TrpcContext["user"]>;
 
@@ -24,7 +25,16 @@ function context(role: TestUser["role"] = "admin"): TrpcContext {
   };
 }
 
-describe("local account activation", () => {
+describe("local account authentication", () => {
+  it("normalizes usernames and stores only a verifiable hash", () => {
+    const secret = "temporary-secret-123";
+    const encoded = hashSecret(secret);
+    expect(normalizeUsername("  Mostafa  ")).toBe("mostafa");
+    expect(encoded).not.toContain(secret);
+    expect(verifySecret(secret, encoded)).toBe(true);
+    expect(verifySecret("wrong-secret-123", encoded)).toBe(false);
+  });
+
   afterEach(() => vi.restoreAllMocks());
 
   it("allows an admin to reactivate and deactivate a local account", async () => {
