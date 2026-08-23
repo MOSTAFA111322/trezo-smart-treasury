@@ -115,6 +115,29 @@ describe("local account authentication", () => {
     const caller = appRouter.createCaller(context("user"));
     await expect(caller.employees.setLocalAccountActive({ employeeId: 7, isActive: true })).rejects.toThrow("صلاحية المدير مطلوبة");
   });
+
+  it("rejects a local account when the employee is already linked to Manus OAuth", async () => {
+    const employeeRow = [{ id: 7, fullName: "موظف مرتبط", isActive: true, linkedUserId: 1, operationalRole: "accountant" }];
+    const selectResults = [employeeRow, []];
+    const fakeDb = {
+      select: vi.fn(() => {
+        const result = selectResults.shift() ?? [];
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue(result),
+            })),
+          })),
+        };
+      }),
+      insert: vi.fn(),
+    };
+    vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
+
+    const caller = appRouter.createCaller(context());
+    await expect(caller.employees.createLocalAccount({ employeeId: 7, username: "linked-user", secret: "temporary-secret-123" })).rejects.toThrow("الموظف مرتبط بحساب دخول Manus بالفعل");
+    expect(fakeDb.insert).not.toHaveBeenCalled();
+  });
 });
 
 export {};
