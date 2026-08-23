@@ -61,6 +61,8 @@ export async function getLocalUser(req: Request) {
     await db.delete(localAuthSessions).where(eq(localAuthSessions.id, session.sessionId));
     return null;
   }
+  const [account] = await db.select({ isActive: localAuthAccounts.isActive }).from(localAuthAccounts).where(eq(localAuthAccounts.userId, session.userId)).limit(1);
+  if (!account?.isActive) return null;
   const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
   return user ?? null;
 }

@@ -417,7 +417,7 @@
 - [x] Verify the fix in preview and rerun TypeScript, Vitest, and production build
 - [x] Diagnose why a disabled internal employee cannot be reactivated from the registry
 - [x] Add a visible reactivation action and clarify internal employee status versus Manus OAuth login
-- [ ] Test disable/reactivate flows without changing auth, database schema, or workflow
+- [x] Test disable/reactivate flows without changing auth, database schema, or workflow
 - [x] Design internal username and secret-code authentication without exposing secrets
 - [x] Obtain explicit approval for schema migration and local authentication implementation
 - [x] Implement secure local login while preserving Manus OAuth fallback
