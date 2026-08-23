@@ -36,7 +36,7 @@ export function getNextWorkflowActor(status: string) {
 export function validateDraftRequest(input: {
   title: string;
   amount: string;
-  companyId: string;
+  companyId?: string;
   beneficiaryId: string;
   channelId: string;
   fiscalYearId: string;
@@ -44,10 +44,16 @@ export function validateDraftRequest(input: {
   if (input.title.trim().length < 3) return "أدخل وصفاً واضحاً للطلب لا يقل عن ثلاثة أحرف.";
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return "أدخل مبلغاً صحيحاً أكبر من صفر.";
-  if (!input.companyId) return "اختر الشركة المرتبطة بطلب الصرف.";
+  if (input.companyId !== undefined && !input.companyId) return "اختر الشركة المرتبطة بطلب الصرف.";
   if (!input.beneficiaryId) return "اختر المستفيد من طلب الصرف.";
   if (!input.channelId) return "اختر قناة الصرف.";
   if (!input.fiscalYearId) return "اختر السنة المالية.";
+  return undefined;
+}
+
+export function validatePayoutChannel(input: { isBank: boolean; bankAccountId: string }) {
+  if (input.isBank && !input.bankAccountId) return "قناة البنك تتطلب حساباً بنكياً مرتبطاً بالمستفيد.";
+  if (!input.isBank && input.bankAccountId) return "قناة الصراف لا تستخدم حساباً بنكياً؛ أفرغ الحساب البنكي أو اختر قناة البنك.";
   return undefined;
 }
 

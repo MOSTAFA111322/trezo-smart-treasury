@@ -6,6 +6,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   totalAmountsByCurrency,
   validateDraftRequest,
+  validatePayoutChannel,
   validateTreasuryAttachment,
 } from "./treasuryPresentation";
 
@@ -26,6 +27,13 @@ describe("treasury presentation helpers", () => {
     expect(validateDraftRequest({ ...base, title: "أ" })).toContain("ثلاثة");
     expect(validateDraftRequest({ ...base, amount: "0" })).toContain("أكبر من صفر");
     expect(validateDraftRequest({ ...base, beneficiaryId: "" })).toContain("المستفيد");
+  });
+
+  it("prevents invalid bank-account combinations for payout channels", () => {
+    expect(validatePayoutChannel({ isBank: true, bankAccountId: "" })).toContain("تتطلب حساباً بنكياً");
+    expect(validatePayoutChannel({ isBank: false, bankAccountId: "42" })).toContain("لا تستخدم حساباً بنكياً");
+    expect(validatePayoutChannel({ isBank: true, bankAccountId: "42" })).toBeUndefined();
+    expect(validatePayoutChannel({ isBank: false, bankAccountId: "" })).toBeUndefined();
   });
 
   it("applies predictable attachment safety checks on the client", () => {

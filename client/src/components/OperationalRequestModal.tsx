@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Paperclip, CheckCircle2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { amountInArabicWords } from "@shared/amountInWords";
+import { validateDraftRequest, validatePayoutChannel } from "@shared/treasuryPresentation";
 
 type Props = { onClose: () => void; onCreated: () => void };
 
@@ -21,12 +22,11 @@ export function OperationalRequestModal({ onClose, onCreated }: Props) {
   const update = (key: keyof typeof form, value: string) => { setMessage(""); setForm((current) => ({ ...current, [key]: value, ...(key === "beneficiaryId" ? { bankAccountId: "" } : {}) })); };
   const missingFields = [!form.title.trim() && "وصف الطلب", (!form.amount || Number(form.amount) <= 0) && "المبلغ", !form.companyId && "الشركة", !form.beneficiaryId && "المستفيد", !form.channelId && "قناة الصرف", !form.fiscalYearId && "السنة المالية", isBank && !form.bankAccountId && "الحساب البنكي"].filter((field): field is string => Boolean(field));
   const submit = () => {
+    const validationMessage = validateDraftRequest(form);
+    if (validationMessage) return setMessage(validationMessage);
     const amount = Number(form.amount);
-    if (!form.title.trim()) return setMessage("أدخل وصف الطلب.");
-    if (!amount || amount <= 0) return setMessage("أدخل مبلغاً أكبر من صفر.");
-    if (!form.companyId || !form.beneficiaryId || !form.channelId || !form.fiscalYearId) return setMessage("أكمل الحقول الأساسية قبل الحفظ.");
-    if (isBank && !form.bankAccountId) return setMessage("قناة البنك تتطلب حساباً بنكياً مرتبطاً بالمستفيد.");
-    if (!isBank && form.bankAccountId) return setMessage("قناة الصراف لا تستخدم حساباً بنكياً.");
+    const channelMessage = validatePayoutChannel({ isBank, bankAccountId: form.bankAccountId });
+    if (channelMessage) return setMessage(channelMessage);
     createDraft.mutate({ title: form.title.trim(), amount, currency: form.currency, companyId: Number(form.companyId), beneficiaryId: Number(form.beneficiaryId), bankAccountId: form.bankAccountId ? Number(form.bankAccountId) : undefined, channelId: Number(form.channelId), fiscalYearId: Number(form.fiscalYearId) });
   };
   const field = "w-full rounded-xl border border-white/10 bg-[#123c2f] px-3 py-3 text-sm text-white outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
