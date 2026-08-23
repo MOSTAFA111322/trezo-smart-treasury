@@ -62,11 +62,14 @@ export function useAuth(options?: UseAuthOptions) {
       "manus-runtime-user-info",
       JSON.stringify(meQuery.data)
     );
+    // A failed auth.me request must not leave a stale cached user rendering
+    // protected screens while downstream procedures correctly reject the session.
+    const authenticatedUser = meQuery.error ? null : meQuery.data ?? null;
     return {
-      user: meQuery.data ?? null,
+      user: authenticatedUser,
       loading: meQuery.isLoading || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      isAuthenticated: Boolean(authenticatedUser),
     };
   }, [
     meQuery.data,

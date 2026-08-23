@@ -408,6 +408,6 @@
 - [x] Verify dropdowns in request form, users, calendar, and entities screens
 - [x] Run TypeScript, Vitest, production build, and visual checks in dark/light modes
 
-- [ ] Diagnose logout failure and stale authenticated UI state reported on the published TREZO site
-- [ ] Add a clear unauthenticated/error recovery state for employee registry loading if needed, without changing auth contracts
+- [x] Diagnose logout failure and stale authenticated UI state reported on the published TREZO site
+- [x] Add a clear unauthenticated/error recovery state for employee registry loading if needed, without changing auth contracts
 - [ ] Verify logout, reload, login recovery, and employee registry loading in preview
