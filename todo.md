@@ -423,3 +423,5 @@
 - [x] Implement secure local login while preserving Manus OAuth fallback
 - [x] Add employee credential management and active-account controls
 - [ ] Test local login, logout, authorization, audit attribution, and reactivation
+- [x] Diagnose Yusuf local login returning to the login screen immediately
+- [ ] Add regression coverage for successful local login session persistence
