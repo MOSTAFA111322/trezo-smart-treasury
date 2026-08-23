@@ -6,10 +6,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   toggleTheme: vi.fn(),
+  auth: { user: { name: "سارة أحمد" } as { name: string } | null, loading: false, isAuthenticated: true },
 }));
 
 vi.mock("@/_core/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { name: "سارة أحمد" }, loading: false, isAuthenticated: true, logout: mocks.logout }),
+  useAuth: () => ({ ...mocks.auth, logout: mocks.logout }),
 }));
 
 vi.mock("@/contexts/ThemeContext", () => ({
@@ -37,7 +38,7 @@ vi.mock("@/lib/trpc", () => ({
 import Home from "./Home";
 
 describe("Home dashboard", () => {
-  afterEach(() => { cleanup(); window.history.replaceState({}, "", "/"); });
+  afterEach(() => { cleanup(); mocks.auth.user = { name: "سارة أحمد" }; mocks.auth.isAuthenticated = true; window.history.replaceState({}, "", "/"); });
 
   it("does not show a false unified total when a currency conversion rate is missing", () => {
     render(<Home />);
@@ -45,6 +46,16 @@ describe("Home dashboard", () => {
     expect(screen.getByText("غير مكتمل")).toBeInTheDocument();
     expect(screen.getByText(/أسعار مفقودة: USD/)).toBeInTheDocument();
     expect(screen.getByText("طلب متعدد العملات")).toBeInTheDocument();
+  });
+
+  it("shows a login gate and does not render protected workspace when unauthenticated", () => {
+    mocks.auth.user = null;
+    mocks.auth.isAuthenticated = false;
+
+    render(<Home />);
+
+    expect(screen.getByRole("button", { name: "تسجيل الدخول" })).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace")).not.toBeInTheDocument();
   });
 
   it("opens exchange-rate settings directly from an incomplete unified total", () => {
