@@ -3,8 +3,9 @@ import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { parse as parseCookie } from "cookie";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
+import { attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, localAuthAccounts, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
 import { getDb } from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
@@ -13,6 +14,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { storagePut } from "./storage";
 import { DEFAULT_OVERDUE_ALERT_CRON, OVERDUE_ALERT_PATH } from "./overdueAlerts";
 import { notifyOwner } from "./_core/notification";
+import { createLocalSession, hashSecret, normalizeUsername, resetLocalLoginFailures, revokeLocalSession, verifySecret, markLocalLoginFailure, LOCAL_SESSION_COOKIE } from "./localAuth";
 
 const statuses = ["draft", "review", "approved", "executed", "rejected"] as const;
 const statusSchema = z.enum(statuses);
@@ -85,7 +87,25 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => { const options = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...options, maxAge: -1 }); return { success: true } as const; }),
+    localLogin: publicProcedure.input(z.object({ username: z.string().trim().min(3).max(80), secret: z.string().min(8).max(128) })).mutation(async ({ input, ctx }) => {
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const username = normalizeUsername(input.username);
+      const [account] = await db.select({ id: localAuthAccounts.id, userId: localAuthAccounts.userId, secretHash: localAuthAccounts.secretHash, mustChangeSecret: localAuthAccounts.mustChangeSecret, isActive: localAuthAccounts.isActive, failedAttempts: localAuthAccounts.failedAttempts, lockedUntil: localAuthAccounts.lockedUntil }).from(localAuthAccounts).where(eq(localAuthAccounts.username, username)).limit(1);
+      if (!account || !account.isActive) throw new Error("اسم المستخدم أو الرمز السري غير صحيح");
+      if (account.lockedUntil && account.lockedUntil > new Date()) throw new Error("تم تعليق الحساب مؤقتاً بعد محاولات فاشلة");
+      if (!verifySecret(input.secret, account.secretHash)) { await markLocalLoginFailure(account.id, account.failedAttempts); throw new Error("اسم المستخدم أو الرمز السري غير صحيح"); }
+      const [user] = await db.select().from(users).where(eq(users.id, account.userId)).limit(1); if (!user) throw new Error("حساب الموظف غير مكتمل");
+      await resetLocalLoginFailures(account.id); await createLocalSession(ctx.req, ctx.res, user.id); await writeEntityAudit(db, user.id, "auth.local.login", "user", user.id, { username });
+      return { success: true, mustChangeSecret: account.mustChangeSecret } as const;
+    }),
+    localChangeSecret: protectedProcedure.input(z.object({ currentSecret: z.string().min(8).max(128), newSecret: z.string().min(8).max(128) })).mutation(async ({ input, ctx }) => {
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [account] = await db.select().from(localAuthAccounts).where(eq(localAuthAccounts.userId, ctx.user.id)).limit(1);
+      if (!account || !verifySecret(input.currentSecret, account.secretHash)) throw new Error("الرمز الحالي غير صحيح");
+      await db.update(localAuthAccounts).set({ secretHash: hashSecret(input.newSecret), mustChangeSecret: false }).where(eq(localAuthAccounts.id, account.id));
+      await writeEntityAudit(db, ctx.user.id, "auth.local.secret.change", "local_auth_account", account.id, { mustChangeSecret: false }); return { success: true } as const;
+    }),
+    logout: publicProcedure.mutation(async ({ ctx }) => { const options = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...options, maxAge: -1 }); await revokeLocalSession(ctx.req, ctx.res); return { success: true } as const; }),
   }),
   permissions: router({
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -129,7 +149,9 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
       const db = await getDb();
-      return db ? db.select().from(internalEmployees).orderBy(desc(internalEmployees.createdAt)) : [];
+      if (!db) return [];
+      const rows = await db.select({ employee: internalEmployees, localUsername: localAuthAccounts.username, localAuthActive: localAuthAccounts.isActive, mustChangeSecret: localAuthAccounts.mustChangeSecret }).from(internalEmployees).leftJoin(localAuthAccounts, eq(localAuthAccounts.employeeId, internalEmployees.id)).orderBy(desc(internalEmployees.createdAt));
+      return rows.map(({ employee, ...account }) => ({ ...employee, ...account }));
     }),
     create: protectedProcedure.input(z.object({ employeeNo: z.string().trim().min(1).max(64), fullName: z.string().trim().min(2).max(180), department: z.string().trim().max(160).optional(), jobTitle: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), operationalRole: z.enum(["accountant", "reviewer", "cfo", "gm", "auditor"]) })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
@@ -139,6 +161,31 @@ export const appRouter = router({
         if (row?.id) await writeEntityAudit(db, ctx.user.id, "internal_employee.create", "internal_employee", row.id, input);
         return { success: true, id: row?.id } as const;
       } catch (error) { if (isDuplicateKeyError(error)) throw new Error("الرقم الوظيفي مستخدم مسبقاً."); throw error; }
+    }),
+    createLocalAccount: protectedProcedure.input(z.object({ employeeId: z.number().int().positive(), username: z.string().trim().min(3).max(80), secret: z.string().min(8).max(128) })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [employee] = await db.select().from(internalEmployees).where(eq(internalEmployees.id, input.employeeId)).limit(1);
+      if (!employee) throw new Error("الموظف غير موجود"); if (!employee.isActive) throw new Error("لا يمكن إنشاء دخول لموظف غير نشط");
+      const username = normalizeUsername(input.username);
+      const [existing] = await db.select({ id: localAuthAccounts.id }).from(localAuthAccounts).where(eq(localAuthAccounts.username, username)).limit(1);
+      if (existing) throw new Error("اسم المستخدم مستخدم مسبقاً");
+      if (employee.linkedUserId) throw new Error("الموظف مرتبط بحساب دخول Manus بالفعل");
+      const [createdUser] = await db.insert(users).values({ openId: `local:${randomUUID()}`, name: employee.fullName, email: null, loginMethod: "local", role: "user" }).$returningId();
+      if (!createdUser?.id) throw new Error("تعذر إنشاء هوية الموظف");
+      await db.insert(localAuthAccounts).values({ username, userId: createdUser.id, employeeId: employee.id, secretHash: hashSecret(input.secret), mustChangeSecret: true, isActive: true });
+      const [role] = await db.select().from(roles).where(eq(roles.name, employee.operationalRole)).limit(1);
+      if (role) await db.insert(userRoles).values({ userId: createdUser.id, roleId: role.id }).onDuplicateKeyUpdate({ set: { roleId: role.id } });
+      await writeEntityAudit(db, ctx.user.id, "local_auth_account.create", "local_auth_account", createdUser.id, { employeeId: employee.id, username });
+      return { success: true, userId: createdUser.id, username } as const;
+    }),
+    setLocalAccountActive: protectedProcedure.input(z.object({ employeeId: z.number().int().positive(), isActive: z.boolean() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [account] = await db.select({ id: localAuthAccounts.id, isActive: localAuthAccounts.isActive }).from(localAuthAccounts).where(eq(localAuthAccounts.employeeId, input.employeeId)).limit(1);
+      if (!account) throw new Error("لا يوجد حساب محلي لهذا الموظف");
+      await db.update(localAuthAccounts).set({ isActive: input.isActive, failedAttempts: 0, lockedUntil: null }).where(eq(localAuthAccounts.id, account.id));
+      await writeEntityAudit(db, ctx.user.id, input.isActive ? "local_auth_account.activate" : "local_auth_account.deactivate", "local_auth_account", account.id, { isActive: input.isActive }, { isActive: account.isActive });
+      return { success: true, isActive: input.isActive } as const;
     }),
     linkUser: protectedProcedure.input(z.object({ employeeId: z.number().int().positive(), userId: z.number().int().positive().nullable() })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");

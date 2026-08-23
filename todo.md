@@ -418,8 +418,8 @@
 - [x] Diagnose why a disabled internal employee cannot be reactivated from the registry
 - [x] Add a visible reactivation action and clarify internal employee status versus Manus OAuth login
 - [ ] Test disable/reactivate flows without changing auth, database schema, or workflow
-- [ ] Design internal username and secret-code authentication without exposing secrets
+- [x] Design internal username and secret-code authentication without exposing secrets
 - [x] Obtain explicit approval for schema migration and local authentication implementation
-- [ ] Implement secure local login while preserving Manus OAuth fallback
-- [ ] Add employee credential management and active-account controls
+- [x] Implement secure local login while preserving Manus OAuth fallback
+- [x] Add employee credential management and active-account controls
 - [ ] Test local login, logout, authorization, audit attribution, and reactivation

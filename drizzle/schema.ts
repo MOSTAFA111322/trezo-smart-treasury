@@ -13,6 +13,29 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const localAuthAccounts = mysqlTable("local_auth_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  username: varchar("username", { length: 80 }).notNull().unique(),
+  userId: int("userId").notNull().unique(),
+  employeeId: int("employeeId").unique(),
+  secretHash: text("secretHash").notNull(),
+  mustChangeSecret: boolean("mustChangeSecret").default(true).notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  failedAttempts: int("failedAttempts").default(0).notNull(),
+  lockedUntil: timestamp("lockedUntil"),
+  lastLoginAt: timestamp("lastLoginAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ usernameIdx: uniqueIndex("local_auth_accounts_username_idx").on(table.username) }));
+
+export const localAuthSessions = mysqlTable("local_auth_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
+  userId: int("userId").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ tokenIdx: uniqueIndex("local_auth_sessions_token_idx").on(table.tokenHash) }));
+
 export const companies = mysqlTable("companies", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 180 }).notNull(),
