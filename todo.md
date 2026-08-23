@@ -401,3 +401,9 @@
 - [ ] If approved, merge only selected non-conflicting features and rerun all checks
 
 - [x] Fix opaque overlay, modal panel, and field backgrounds in OperationalRequestModal.tsx only; verify preview
+
+- [ ] Inventory all native select and shadcn Select usages plus global theme styles
+- [ ] Save checkpoint before dropdown styling changes
+- [ ] Apply solid dark/light dropdown and option styling with explicit color-scheme
+- [ ] Verify dropdowns in request form, users, calendar, and entities screens
+- [ ] Run TypeScript, Vitest, production build, and visual checks in dark/light modes
