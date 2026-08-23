@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   formatTreasuryAmount,
   getRequestStatusPresentation,
+  getNextWorkflowActor,
   getWorkflowAction,
   type TreasuryStatus,
   validateTreasuryAttachment,
@@ -130,13 +131,14 @@ export default function TreasuryRequestWorkflow({ rows, onCreateRequest }: { row
         <h3 className="font-display text-lg font-extrabold">دورة اعتماد طلبات الصرف</h3>
         <p className="mt-1 text-xs text-muted-foreground">تتطلب كل خطوة تأكيداً واضحاً، ويُحفظ الإجراء وملاحظته في سجل التدقيق.</p>
       </div>
-      {transitionMessage && <div role="status" className={`m-5 flex items-start gap-2 rounded-xl border p-3 text-sm ${transitionMessage.startsWith("تم") ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}><CheckCircle2 size={17} className="mt-0.5 shrink-0" />{transitionMessage}</div>}
+      {transitionMessage && <div role="status" className={`m-5 flex items-start gap-2 rounded-xl border p-3 text-sm ${transitionMessage.startsWith("تم") ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>{transitionMessage.startsWith("تم") ? <CheckCircle2 size={17} className="mt-0.5 shrink-0" /> : <AlertCircle size={17} className="mt-0.5 shrink-0" />}{transitionMessage}</div>}
       <div className="divide-y">
         {rows.length ? rows.map((row) => {
           const action = getWorkflowAction(row.status);
           const isSelected = selectedRequestId === row.id;
           const isConfirming = pendingTransition?.requestId === row.id;
           const status = getRequestStatusPresentation(row.status);
+          const nextActor = getNextWorkflowActor(row.status);
           const canReject = ["draft", "review", "approved"].includes(row.status);
           return (
             <div key={row.id} className="p-5">
@@ -145,6 +147,7 @@ export default function TreasuryRequestWorkflow({ rows, onCreateRequest }: { row
                   <p className="font-bold">{row.title}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{row.referenceNumber} · {formatTreasuryAmount(row.amount, row.currency)}</p>
                   <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${toneClasses[status.tone]}`}>{status.label}</span>
+                  {nextActor && <div className="mt-3 rounded-xl border border-[#b8d8cc] bg-[#f2f7f4] px-3 py-2 text-xs"><span className="font-semibold text-muted-foreground">المسؤول التالي:</span> <strong>{nextActor.role}</strong><span className="mx-1 text-muted-foreground">·</span><span>{nextActor.action}</span></div>}
                   <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="مراحل اعتماد الطلب">
                     {approvalStages.map((stage, index) => {
                       const currentIndex = stageIndexByStatus[row.status] ?? -1;

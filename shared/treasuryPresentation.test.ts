@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getRequestStatusPresentation,
+  getNextWorkflowActor,
   getWorkflowAction,
   MAX_ATTACHMENT_BYTES,
   totalAmountsByCurrency,
@@ -14,6 +15,9 @@ describe("treasury presentation helpers", () => {
     expect(getRequestStatusPresentation("unknown")).toMatchObject({ label: "unknown", tone: "neutral" });
     expect(getWorkflowAction("draft")).toEqual({ label: "إرسال للمراجعة", toStatus: "review" });
     expect(getWorkflowAction("executed")).toBeUndefined();
+    expect(getNextWorkflowActor("review")).toEqual({ role: "المراجع", action: "مراجعة واعتماد الطلب" });
+    expect(getNextWorkflowActor("approved")).toEqual({ role: "المدير العام", action: "تسجيل تنفيذ الطلب" });
+    expect(getNextWorkflowActor("executed")).toEqual({ role: "المدقق", action: "إجراء التدقيق اللاحق" });
   });
 
   it("rejects incomplete draft requests before they reach the server", () => {

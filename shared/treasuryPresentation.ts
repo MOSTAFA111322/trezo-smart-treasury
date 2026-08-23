@@ -22,6 +22,17 @@ export function getWorkflowAction(status: string) {
   return actions[status];
 }
 
+export function getNextWorkflowActor(status: string) {
+  const actors: Record<string, { role: string; action: string } | undefined> = {
+    draft: { role: "المحاسب", action: "إرسال الطلب للمراجعة" },
+    review: { role: "المراجع", action: "مراجعة واعتماد الطلب" },
+    approved: { role: "المدير العام", action: "تسجيل تنفيذ الطلب" },
+    executed: { role: "المدقق", action: "إجراء التدقيق اللاحق" },
+    rejected: { role: "المحاسب", action: "تصحيح الطلب وإعادة فتحه" },
+  };
+  return actors[status];
+}
+
 export function validateDraftRequest(input: {
   title: string;
   amount: string;
