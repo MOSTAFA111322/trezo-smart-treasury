@@ -422,7 +422,7 @@
 - [x] Obtain explicit approval for schema migration and local authentication implementation
 - [x] Implement secure local login while preserving Manus OAuth fallback
 - [x] Add employee credential management and active-account controls
-- [ ] Test local login, logout, authorization, audit attribution, and reactivation
+- [x] Test local login, logout, authorization, audit attribution, and reactivation
 - [x] Diagnose Yusuf local login returning to the login screen immediately
 - [x] Add regression coverage for successful local login session persistence
 - [x] Diagnose admin-only query invoked for Yusuf's non-admin local account
