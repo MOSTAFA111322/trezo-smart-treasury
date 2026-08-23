@@ -402,8 +402,8 @@
 
 - [x] Fix opaque overlay, modal panel, and field backgrounds in OperationalRequestModal.tsx only; verify preview
 
-- [ ] Inventory all native select and shadcn Select usages plus global theme styles
-- [ ] Save checkpoint before dropdown styling changes
-- [ ] Apply solid dark/light dropdown and option styling with explicit color-scheme
+- [x] Inventory all native select and shadcn Select usages plus global theme styles
+- [x] Save checkpoint before dropdown styling changes
+- [x] Apply solid dark/light dropdown and option styling with explicit color-scheme
 - [ ] Verify dropdowns in request form, users, calendar, and entities screens
-- [ ] Run TypeScript, Vitest, production build, and visual checks in dark/light modes
+- [x] Run TypeScript, Vitest, production build, and visual checks in dark/light modes

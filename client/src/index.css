@@ -3,6 +3,11 @@
 @import "tw-animate-css";
 
 :root {
+  color-scheme: light;
+  --select-background: #f8fafc;
+  --select-foreground: #0f172a;
+  --select-highlight: #10b981;
+  --select-highlight-foreground: #052e1b;
   --background: oklch(0.97 0.018 160);
   --foreground: oklch(0.22 0.035 168);
   --card: oklch(0.995 0.008 160);
@@ -25,6 +30,11 @@
 }
 
 .dark {
+  color-scheme: dark;
+  --select-background: #0b241c;
+  --select-foreground: #f8fafc;
+  --select-highlight: #10b981;
+  --select-highlight-foreground: #052e1b;
   --background: oklch(0.18 0.025 168);
   --foreground: oklch(0.94 0.018 160);
   --card: oklch(0.225 0.03 168);
@@ -49,6 +59,20 @@
 html { direction: rtl; }
 body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif; }
 button, input, select, textarea { font: inherit; }
+select {
+  color-scheme: inherit;
+  background-color: var(--select-background);
+  color: var(--select-foreground);
+}
+select option {
+  background-color: var(--select-background);
+  color: var(--select-foreground);
+}
+select option:checked,
+select option:hover {
+  background-color: var(--select-highlight);
+  color: var(--select-highlight-foreground);
+}
 .font-display { font-family: 'Manrope', 'IBM Plex Sans Arabic', sans-serif; }
 
 @layer base {
