@@ -405,5 +405,5 @@
 - [x] Inventory all native select and shadcn Select usages plus global theme styles
 - [x] Save checkpoint before dropdown styling changes
 - [x] Apply solid dark/light dropdown and option styling with explicit color-scheme
-- [ ] Verify dropdowns in request form, users, calendar, and entities screens
+- [x] Verify dropdowns in request form, users, calendar, and entities screens
 - [x] Run TypeScript, Vitest, production build, and visual checks in dark/light modes
