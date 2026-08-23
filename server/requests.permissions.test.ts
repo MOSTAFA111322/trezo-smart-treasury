@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./db", () => ({ getDb: vi.fn() }));
 
-import { appRouter } from "./routers";
+import { appRouter, operationalRoleGrantsPermission } from "./routers";
 import { getDb } from "./db";
 
 function context(role: "user" | "admin", id = 7) {
@@ -17,11 +17,11 @@ function mockTransitionDb(permissionAssigned: boolean) {
   const request = { id: 4, status: "review", createdBy: 7 };
   const selectResults = [
     [request],
+    permissionAssigned ? [{ name: "cfo" }] : [],
     [{ id: 2, name: "user" }],
     [{ id: 9, code: "requests.approve" }],
-      permissionAssigned ? [{ roleId: 2 }] : [],
-      permissionAssigned ? [{ name: "cfo" }] : [],
-    ];
+    permissionAssigned ? [{ roleId: 2 }] : [],
+  ];
   const select = vi.fn();
   for (const result of selectResults) {
     select.mockReturnValueOnce({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue(result) }), innerJoin: () => ({ where: () => vi.fn().mockResolvedValue(result)() }) }) });
@@ -49,5 +49,12 @@ describe("requests.transition permission route", () => {
     vi.mocked(getDb).mockResolvedValue(mockTransitionDb(true) as never);
     const caller = appRouter.createCaller(context("user") as never);
     await expect(caller.requests.transition({ requestId: 4, toStatus: "approved" })).resolves.toEqual({ requestId: 4, status: "approved" });
+  });
+
+  it("maps local operational roles to only their workflow permission", () => {
+    expect(operationalRoleGrantsPermission("accountant", "requests.review")).toBe(true);
+    expect(operationalRoleGrantsPermission("cfo", "requests.approve")).toBe(true);
+    expect(operationalRoleGrantsPermission("accountant", "requests.approve")).toBe(false);
+    expect(operationalRoleGrantsPermission("auditor", "requests.execute")).toBe(false);
   });
 });

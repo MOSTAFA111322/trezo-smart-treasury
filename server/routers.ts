@@ -36,6 +36,18 @@ export function requiredPermissionForTransition(status: (typeof statuses)[number
   return null;
 }
 
+const OPERATIONAL_ROLE_PERMISSIONS: Record<string, readonly PermissionKey[]> = {
+  accountant: ["requests.review"],
+  reviewer: ["requests.review"],
+  cfo: ["requests.approve"],
+  gm: ["requests.execute"],
+  auditor: [],
+};
+
+export function operationalRoleGrantsPermission(roleName: string, permission: PermissionKey) {
+  return OPERATIONAL_ROLE_PERMISSIONS[roleName]?.includes(permission) ?? false;
+}
+
 async function hasEffectivePermission(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, roleName: string, permission: PermissionKey) {
   const role = (await db.select().from(roles).where(eq(roles.name, roleName)).limit(1))[0];
   const catalogPermission = (await db.select().from(permissionRows).where(eq(permissionRows.code, permission)).limit(1))[0];
@@ -358,13 +370,21 @@ export const appRouter = router({
       const [request] = await db.select().from(disbursementRequests).where(eq(disbursementRequests.id, input.requestId)).limit(1);
       if (!request) throw new Error("طلب الصرف غير موجود");
       if (!allowedTransitions[request.status].includes(input.toStatus)) throw new Error("انتقال الحالة غير مسموح");
-      const requiredPermission = requiredPermissionForTransition(input.toStatus);
-      if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission))) throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
       const roleNames = new Set<string>();
       if (ctx.user.role !== "admin") {
         const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
         assignedRoles.forEach((role) => roleNames.add(role.name));
+        if (ctx.user.loginMethod === "local") {
+          const [localAccount] = await db.select({ employeeId: localAuthAccounts.employeeId }).from(localAuthAccounts).where(eq(localAuthAccounts.userId, ctx.user.id)).limit(1);
+          if (localAccount?.employeeId) {
+            const [linkedEmployee] = await db.select({ operationalRole: internalEmployees.operationalRole, isActive: internalEmployees.isActive }).from(internalEmployees).where(eq(internalEmployees.id, localAccount.employeeId)).limit(1);
+            if (linkedEmployee?.isActive) roleNames.add(linkedEmployee.operationalRole);
+          }
+        }
       }
+      const requiredPermission = requiredPermissionForTransition(input.toStatus);
+      const hasOperationalPermission = requiredPermission ? Array.from(roleNames).some((roleName) => operationalRoleGrantsPermission(roleName, requiredPermission)) : false;
+      if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission)) && !hasOperationalPermission && ctx.user.role !== "admin") throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
       if (input.toStatus === "review" && request.status === "draft" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
       if (input.toStatus === "review" && request.status === "review" && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("تأكيد المراجعة متاح للمراجع فقط");
       if (input.toStatus === "approved" && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
