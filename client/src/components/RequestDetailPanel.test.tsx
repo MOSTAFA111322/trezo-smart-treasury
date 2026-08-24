@@ -35,6 +35,13 @@ describe("RequestDetailPanel save", () => {
     mutate.mockClear();
   });
 
+  it("opens the request selected by the parent workspace", () => {
+    render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب مفتوح من البطاقة", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} selectedRequestId={7} onSelectedRequestIdChange={vi.fn()} />);
+    expect(screen.getByText("TRZ-00007 · الحالة: مسودة")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "تعديل الطلب" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "أمر صرف" })).toBeInTheDocument();
+  });
+
   it("refreshes the request list after a successful edit", async () => {
     render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب قديم", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} />);
     fireEvent.change(screen.getByRole("combobox", { name: "اختيار طلب للتفاصيل" }), { target: { value: "7" } });

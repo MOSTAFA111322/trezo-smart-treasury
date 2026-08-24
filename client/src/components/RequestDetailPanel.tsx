@@ -18,10 +18,16 @@ type RequestRecord = {
   status: string;
 };
 
-type Props = { rows: RequestRecord[]; currencies: Array<{ code: string; nameAr: string; decimals: number }> };
+type Props = { rows: RequestRecord[]; currencies: Array<{ code: string; nameAr: string; decimals: number }>; selectedRequestId?: number; onSelectedRequestIdChange?: (requestId: number | undefined) => void };
 
-export function RequestDetailPanel({ rows, currencies }: Props) {
-  const [selectedId, setSelectedId] = useState<number>();
+export function RequestDetailPanel({ rows, currencies, selectedRequestId: controlledSelectedId, onSelectedRequestIdChange }: Props) {
+  const [internalSelectedId, setInternalSelectedId] = useState<number>();
+  const isControlled = controlledSelectedId !== undefined || onSelectedRequestIdChange !== undefined;
+  const selectedId = isControlled ? controlledSelectedId : internalSelectedId;
+  const setSelectedId = (requestId: number | undefined) => {
+    if (!isControlled) setInternalSelectedId(requestId);
+    onSelectedRequestIdChange?.(requestId);
+  };
   const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState("");
   const [copyLabel, setCopyLabel] = useState("نسخ الرقم المرجعي");
