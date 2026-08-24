@@ -18,7 +18,8 @@ vi.mock("@/lib/trpc", () => ({
       },
     },
     entities: {
-      beneficiaries: { list: { useQuery: () => ({ data: [{ id: 1, name: "مستفيد تجريبي" }] }) } },
+      companies: { list: { useQuery: () => ({ data: [{ id: 3, name: "جهة تجريبية", legalName: "الجهة التجريبية الرسمية" }] }) } },
+      beneficiaries: { list: { useQuery: () => ({ data: [{ id: 1, name: "مستفيد تجريبي", phone: "777000000" }] }) } },
       beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [] }) } },
       channels: { list: { useQuery: () => ({ data: [{ id: 1, name: "صراف" }] }) } },
     },
@@ -36,14 +37,21 @@ describe("RequestDetailPanel save", () => {
   });
 
   it("opens the request selected by the parent workspace", () => {
-    render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب مفتوح من البطاقة", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} selectedRequestId={7} onSelectedRequestIdChange={vi.fn()} />);
+    render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب مفتوح من البطاقة", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, companyId: 3, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} selectedRequestId={7} onSelectedRequestIdChange={vi.fn()} />);
     expect(screen.getByText("TRZ-00007 · الحالة: مسودة")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "تعديل الطلب" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "أمر صرف" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "رسمي" })).toBeInTheDocument();
+  });
+
+  it("keeps edit unavailable for an executed request while retaining print actions", () => {
+    render(<RequestDetailPanel rows={[{ id: 8, referenceNumber: "TRZ-00008", title: "طلب منفذ", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, companyId: 3, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "executed" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} selectedRequestId={8} onSelectedRequestIdChange={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "تعديل الطلب" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "رسمي" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "أرشيف داخلي" })).toBeInTheDocument();
   });
 
   it("refreshes the request list after a successful edit", async () => {
-    render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب قديم", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} />);
+    render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب قديم", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, companyId: 3, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} />);
     fireEvent.change(screen.getByRole("combobox", { name: "اختيار طلب للتفاصيل" }), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: "تعديل الطلب" }));
     fireEvent.change(screen.getByPlaceholderText("بيان الطلب"), { target: { value: "طلب معدل" } });
