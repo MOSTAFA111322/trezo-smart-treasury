@@ -65,6 +65,21 @@ describe("RequestDetailPanel save", () => {
     expect(popup.focus).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps workflow details only in the internal archive template", () => {
+    const write = vi.fn();
+    const popup = { opener: window, document: { open: vi.fn(), write, close: vi.fn() }, focus: vi.fn() } as unknown as Window;
+    vi.stubGlobal("open", vi.fn(() => popup));
+    render(<RequestDetailPanel rows={[{ id: 10, referenceNumber: "TRZ-00010", title: "طلب فصل القوالب", description: "وصف", amount: "300", currency: "YER", beneficiaryId: 1, companyId: 3, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "review" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} selectedRequestId={10} onSelectedRequestIdChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "رسمي" }));
+    const officialDocument = String(write.mock.calls[0][0]);
+    expect(officialDocument).toContain("أمر صرف رسمي");
+    expect(officialDocument).not.toContain("مسار الاعتماد الداخلي");
+    fireEvent.click(screen.getByRole("button", { name: "أرشيف داخلي" }));
+    const archiveDocument = String(write.mock.calls[1][0]);
+    expect(archiveDocument).toContain("مسار الاعتماد الداخلي");
+    expect(archiveDocument).toContain("المراجع");
+  });
+
   it("refreshes the request list after a successful edit", async () => {
     render(<RequestDetailPanel rows={[{ id: 7, referenceNumber: "TRZ-00007", title: "طلب قديم", description: "وصف", amount: "100", currency: "YER", beneficiaryId: 1, companyId: 3, bankAccountId: null, channelId: 1, fiscalYearId: 1, status: "draft" }]} currencies={[{ code: "YER", nameAr: "ريال يمني", decimals: 2 }]} />);
     fireEvent.change(screen.getByRole("combobox", { name: "اختيار طلب للتفاصيل" }), { target: { value: "7" } });
