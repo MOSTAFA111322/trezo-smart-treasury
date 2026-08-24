@@ -1,12 +1,14 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   toggleTheme: vi.fn(),
   auth: { user: { name: "سارة أحمد" } as { name: string } | null, loading: false, isAuthenticated: true },
+  localLoginOptions: null as { onSuccess?: (result: { mustChangeSecret?: boolean }) => void } | null,
+  changeSecretOptions: null as { onSuccess?: () => void } | null,
 }));
 
 vi.mock("@/_core/hooks/useAuth", () => ({
@@ -32,13 +34,17 @@ vi.mock("@/lib/trpc", () => ({
     },
     settings: { currencies: { useQuery: () => ({ data: [] }) } },
     audit: { list: { useQuery: () => ({ data: [] }) } },
+    auth: {
+      localLogin: { useMutation: (options: typeof mocks.localLoginOptions) => { mocks.localLoginOptions = options; return { mutate: vi.fn(), isPending: false }; } },
+      localChangeSecret: { useMutation: (options: typeof mocks.changeSecretOptions) => { mocks.changeSecretOptions = options; return { mutate: vi.fn(), isPending: false }; } },
+    },
   },
 }));
 
 import Home from "./Home";
 
 describe("Home dashboard", () => {
-  afterEach(() => { cleanup(); mocks.auth.user = { name: "سارة أحمد" }; mocks.auth.isAuthenticated = true; window.history.replaceState({}, "", "/"); });
+  afterEach(() => { cleanup(); mocks.auth.user = { name: "سارة أحمد" }; mocks.auth.isAuthenticated = true; mocks.localLoginOptions = null; mocks.changeSecretOptions = null; window.history.replaceState({}, "", "/"); });
 
   it("does not show a false unified total when a currency conversion rate is missing", () => {
     render(<Home />);
@@ -56,6 +62,22 @@ describe("Home dashboard", () => {
 
     expect(screen.getByRole("button", { name: "تسجيل الدخول" })).toBeInTheDocument();
     expect(screen.queryByTestId("workspace")).not.toBeInTheDocument();
+  });
+
+  it("requires a new secret after a local account reports a temporary secret", () => {
+    mocks.auth.user = null;
+    mocks.auth.isAuthenticated = false;
+    render(<Home />);
+
+    fireEvent.change(screen.getByLabelText("اسم المستخدم"), { target: { value: "accountant1" } });
+    fireEvent.change(screen.getByLabelText("الرمز السري"), { target: { value: "12345678" } });
+    expect(mocks.localLoginOptions?.onSuccess).toBeTypeOf("function");
+    act(() => { mocks.localLoginOptions?.onSuccess?.({ mustChangeSecret: true }); });
+
+    expect(screen.getByRole("heading", { name: "تغيير الرمز المؤقت" })).toBeInTheDocument();
+    const newSecretInput = screen.getByLabelText("الرمز الجديد");
+    fireEvent.change(newSecretInput, { target: { value: "87654321" } });
+    expect(screen.getByRole("button", { name: "حفظ الرمز الجديد والمتابعة" })).toBeEnabled();
   });
 
   it("opens exchange-rate settings directly from an incomplete unified total", () => {
