@@ -336,7 +336,7 @@ export const appRouter = router({
       if (input.fiscalYearId) conditions.push(eq(disbursementRequests.fiscalYearId, input.fiscalYearId));
       return db.select({ referenceNumber: disbursementRequests.referenceNumber, companyName: companies.name, fiscalYear: fiscalYears.year, beneficiaryName: beneficiaries.name, title: disbursementRequests.title, amount: disbursementRequests.amount, currency: disbursementRequests.currency, status: disbursementRequests.status, scheduledFor: disbursementRequests.scheduledFor, createdAt: disbursementRequests.createdAt }).from(disbursementRequests).innerJoin(companies, eq(disbursementRequests.companyId, companies.id)).innerJoin(fiscalYears, eq(disbursementRequests.fiscalYearId, fiscalYears.id)).innerJoin(beneficiaries, eq(disbursementRequests.beneficiaryId, beneficiaries.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(disbursementRequests.createdAt));
     }),
-    logExport: protectedProcedure.input(z.object({ format: z.enum(["csv", "pdf"]), companyId: z.number().int().positive().optional(), fiscalYearId: z.number().int().positive().optional(), recordCount: z.number().int().min(0) })).mutation(async ({ input, ctx }) => {
+    logExport: protectedProcedure.input(z.object({ format: z.enum(["csv", "xlsx", "pdf"]), companyId: z.number().int().positive().optional(), fiscalYearId: z.number().int().positive().optional(), recordCount: z.number().int().min(0) })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("تسجيل تصدير التقارير متاح لمدير النظام فقط");
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
       await writeEntityAudit(db, ctx.user.id, `report.export.${input.format}`, "financial_report", `${input.companyId ?? "all"}-${input.fiscalYearId ?? "all"}`, { companyId: input.companyId ?? null, fiscalYearId: input.fiscalYearId ?? null, recordCount: input.recordCount });
@@ -405,6 +405,7 @@ export const appRouter = router({
   }),
   requests: router({
     list: protectedProcedure.input(z.object({ status: statusSchema.optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select().from(disbursementRequests).where(input?.status ? eq(disbursementRequests.status, input.status) : undefined).orderBy(desc(disbursementRequests.createdAt)).limit(100); }),
+    workflow: protectedProcedure.input(z.object({ requestId: z.number().int().positive() })).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select({ id: workflowEvents.id, fromStatus: workflowEvents.fromStatus, toStatus: workflowEvents.toStatus, comment: workflowEvents.comment, actorId: workflowEvents.actorId, actorName: users.name, createdAt: workflowEvents.createdAt }).from(workflowEvents).leftJoin(users, eq(workflowEvents.actorId, users.id)).where(eq(workflowEvents.requestId, input.requestId)).orderBy(desc(workflowEvents.createdAt)); }),
     createDraft: protectedProcedure.input(requestInput).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
       return db.transaction(async (tx) => {

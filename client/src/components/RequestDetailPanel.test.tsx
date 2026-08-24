@@ -10,6 +10,7 @@ vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({ requests: { list: { invalidate } } }),
     requests: {
+      workflow: { useQuery: () => ({ data: [] }) },
       update: {
         useMutation: (options: { onSuccess: () => Promise<void>; onError: (error: Error) => void }) => {
           mutate.mockImplementation(async () => options.onSuccess());

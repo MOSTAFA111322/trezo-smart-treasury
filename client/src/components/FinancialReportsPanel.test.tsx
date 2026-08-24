@@ -30,6 +30,10 @@ describe("FinancialReportsPanel", () => {
     fireEvent.change(screen.getByLabelText("السنة المالية"), { target: { value: "9" } });
     expect(reportQuery).toHaveBeenLastCalledWith({ companyId: 1, fiscalYearId: 9 });
     expect(screen.getByRole("button", { name: "تنزيل CSV" })).toBeEnabled();
+    const excelButton = screen.getByRole("button", { name: "تنزيل Excel" });
+    expect(excelButton).toBeEnabled();
+    fireEvent.click(excelButton);
+    await waitFor(() => expect(logExportMutateAsync).toHaveBeenCalledWith({ format: "xlsx", companyId: 1, fiscalYearId: 9, recordCount: 1 }));
     const pdfButton = screen.getByRole("button", { name: "تنزيل PDF رسمي" });
     expect(pdfButton).toBeEnabled();
     fireEvent.click(pdfButton);
