@@ -16,6 +16,11 @@ function trpcProxy(path: string[] = []): object {
           if (key === "dashboard.unified") return { data: { missingRates: ["USD"] }, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "audit.list") return { data: auditRows, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "permissions.list") return { data: { roleId: null, keys: [] }, isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "entities.companies.list") return { data: [{ id: 1, name: "شركة TREZO" }], isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "entities.beneficiaries.list") return { data: [{ id: 2, name: "مستفيد تجريبي", companyId: 1 }], isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "entities.channels.list") return { data: [{ id: 3, name: "البنك" }], isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "requests.list") return { data: [{ id: 9, referenceNumber: "TRZ-00009", title: "شراء مستلزمات", amount: "1000", currency: "YER", status: "draft", companyId: 1, beneficiaryId: 2, channelId: 3, scheduledFor: new Date("2026-08-20T00:00:00Z"), createdAt: new Date("2026-08-18T00:00:00Z") }], isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "attachments.list") return { data: [], isLoading: false, error: null, refetch: vi.fn() };
           return emptyQuery();
         };
       }
@@ -67,6 +72,21 @@ describe("Workspace exchange-rate readiness", () => {
     expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("مصدر سعر الصرف"), { target: { value: "اعتماد لجنة الخزينة" } });
     expect(screen.getByRole("button", { name: "حفظ سعر الصرف واعتماده من مستخدم ثانٍ" })).toBeEnabled();
+  });
+
+  it("renders the operational request table and filters by company", () => {
+    render(<Workspace active="requests" onBack={vi.fn()} onCreateRequest={vi.fn()} />);
+
+    expect(screen.getByText("قائمة طلبات الصرف")).toBeInTheDocument();
+    expect(screen.getByText("المستفيد")).toBeInTheDocument();
+    expect(screen.getByText("الشركة")).toBeInTheDocument();
+    expect(screen.getByLabelText("اختيار الشركة النشطة")).toHaveValue("all");
+    expect(screen.getAllByText("مستفيد تجريبي").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("اختيار الشركة النشطة"), { target: { value: "1" } });
+    expect(screen.getAllByText("شركة TREZO").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("من تاريخ"), { target: { value: "2026-08-21" } });
+    expect(screen.getByText("لا توجد نتائج مطابقة للفلاتر الحالية.")).toBeInTheDocument();
   });
 
   it("does not render the employee administration panel for a non-admin user", () => {
