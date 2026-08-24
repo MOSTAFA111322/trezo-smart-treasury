@@ -125,6 +125,13 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    currentProfile: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return { appRole: ctx.user.role, operationalRoles: [] as string[] };
+      const rows = await db.select({ roleName: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
+      const operationalRoles = rows.map((row) => row.roleName).filter((name): name is "accountant" | "reviewer" | "cfo" | "gm" | "auditor" => ["accountant", "reviewer", "cfo", "gm", "auditor"].includes(name));
+      return { appRole: ctx.user.role, operationalRoles };
+    }),
     localLogin: publicProcedure.input(z.object({ username: z.string().trim().min(3).max(80), secret: z.string().min(8).max(128) })).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
       const username = normalizeUsername(input.username);
