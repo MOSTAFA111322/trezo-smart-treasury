@@ -128,9 +128,12 @@ export const appRouter = router({
     currentProfile: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
       if (!db) return { appRole: ctx.user.role, operationalRoles: [] as string[] };
-      const rows = await db.select({ roleName: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
-      const operationalRoles = rows.map((row) => row.roleName).filter((name): name is "accountant" | "reviewer" | "cfo" | "gm" | "auditor" => ["accountant", "reviewer", "cfo", "gm", "auditor"].includes(name));
-      return { appRole: ctx.user.role, operationalRoles };
+      const roleRows = await db.select({ roleName: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
+      const linkedEmployeeRows = await db.select({ operationalRole: internalEmployees.operationalRole }).from(internalEmployees).where(eq(internalEmployees.linkedUserId, ctx.user.id));
+      const localEmployeeRows = await db.select({ operationalRole: internalEmployees.operationalRole }).from(localAuthAccounts).innerJoin(internalEmployees, eq(localAuthAccounts.employeeId, internalEmployees.id)).where(eq(localAuthAccounts.userId, ctx.user.id));
+      const roleNames = [...roleRows.map((row) => row.roleName), ...linkedEmployeeRows.map((row) => row.operationalRole), ...localEmployeeRows.map((row) => row.operationalRole)];
+      const operationalRoles = roleNames.filter((name): name is "accountant" | "reviewer" | "cfo" | "gm" | "auditor" => ["accountant", "reviewer", "cfo", "gm", "auditor"].includes(name));
+      return { appRole: ctx.user.role, operationalRoles: Array.from(new Set(operationalRoles)) };
     }),
     localLogin: publicProcedure.input(z.object({ username: z.string().trim().min(3).max(80), secret: z.string().min(8).max(128) })).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");

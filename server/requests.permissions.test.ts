@@ -80,4 +80,16 @@ describe("requests.transition permission route", () => {
     expect(operationalRoleGrantsPermission("accountant", "requests.approve")).toBe(false);
     expect(operationalRoleGrantsPermission("auditor", "requests.execute")).toBe(false);
   });
+
+  it("resolves the GM role for a local account linked through localAuthAccounts", async () => {
+    const directResult = (value: unknown) => Object.assign(Promise.resolve(value), { limit: vi.fn().mockResolvedValue(value) });
+    const select = vi.fn()
+      .mockReturnValueOnce({ from: () => ({ innerJoin: () => ({ where: () => directResult([]) }) }) })
+      .mockReturnValueOnce({ from: () => ({ where: () => directResult([]) }) })
+      .mockReturnValueOnce({ from: () => ({ innerJoin: () => ({ where: () => directResult([{ operationalRole: "gm" }]) }) }) });
+    vi.mocked(getDb).mockResolvedValue({ select } as never);
+
+    const caller = appRouter.createCaller(context("user", 9240007) as never);
+    await expect(caller.auth.currentProfile()).resolves.toEqual({ appRole: "user", operationalRoles: ["gm"] });
+  });
 });
