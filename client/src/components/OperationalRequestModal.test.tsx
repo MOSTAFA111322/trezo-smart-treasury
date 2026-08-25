@@ -16,7 +16,8 @@ vi.mock("@/lib/trpc", () => ({
       companies: { list: { useQuery: () => ({ data: [{ id: 1, name: "شركة تجريبية" }] }) } },
       beneficiaries: { list: { useQuery: () => ({ data: [{ id: 2, name: "مستفيد تجريبي" }] }) } },
       channels: { list: { useQuery: () => ({ data: [{ id: 2, name: "صراف تجريبي", code: "CASHIER" }, { id: 3, name: "قناة بنك", code: "BANK" }] }) } },
-      beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [{ id: 4, bankName: "بنك تجريبي", accountName: "الحساب التشغيلي", iban: "SA001" }] }) } },
+      banks: { list: { useQuery: () => ({ data: [{ id: 7, name: "بنك تجريبي" }, { id: 8, name: "بنك ثانٍ" }] }) } },
+      beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [{ id: 4, bankId: 7, bankName: "بنك تجريبي", accountName: "الحساب التشغيلي", iban: "SA001" }] }) } },
     },
     settings: {
       fiscalYears: { useQuery: () => ({ data: [{ id: 5, year: 2026 }] }) },
@@ -75,6 +76,34 @@ describe("OperationalRequestModal", () => {
     expect(screen.queryByRole("option", { name: "صراف تجريبي" })).not.toBeInTheDocument();
   });
 
+  it("shows the selected bank separately and filters the beneficiary account list", async () => {
+    const user = userEvent.setup();
+    render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    await user.selectOptions(screen.getByLabelText(/^البنك/), "7");
+
+    expect(screen.getByRole("option", { name: "بنك تجريبي" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "بنك تجريبي — الحساب التشغيلي — SA001" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /بنك ثانٍ —/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps a cashier request independent from bank and bank-account fields", async () => {
+    const user = userEvent.setup();
+    render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    await user.type(screen.getByLabelText(/وصف الطلب/), "صرف نقدي");
+    await user.type(screen.getByLabelText(/المبلغ/), "125");
+    await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
+    await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
+    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "cashier");
+    await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "2");
+    await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
+    await user.click(screen.getByRole("button", { name: /إنشاء المسودة/ }));
+
+    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({ channelId: 2, bankAccountId: undefined }));
+  });
+
   it("submits a complete bank-channel request only after an account is selected", async () => {
     const user = userEvent.setup();
     render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
@@ -86,6 +115,7 @@ describe("OperationalRequestModal", () => {
     await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "3");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
+    await user.selectOptions(screen.getByLabelText(/^البنك/), "7");
     await user.selectOptions(screen.getByLabelText(/الحساب البنكي/), "4");
     await user.click(screen.getByRole("button", { name: /إنشاء المسودة/ }));
 
