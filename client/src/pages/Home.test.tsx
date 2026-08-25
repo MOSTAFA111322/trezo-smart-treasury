@@ -46,12 +46,16 @@ import Home from "./Home";
 describe("Home dashboard", () => {
   afterEach(() => { cleanup(); mocks.auth.user = { name: "سارة أحمد" }; mocks.auth.isAuthenticated = true; mocks.localLoginOptions = null; mocks.changeSecretOptions = null; window.history.replaceState({}, "", "/"); });
 
-  it("does not show a false unified total when a currency conversion rate is missing", () => {
+  it("shows raw totals independently for each currency without conversion", () => {
     render(<Home />);
 
-    expect(screen.getByText("غير مكتمل")).toBeInTheDocument();
-    expect(screen.getByText(/أسعار مفقودة: USD/)).toBeInTheDocument();
+    expect(screen.getByText("إجمالي SAR")).toBeInTheDocument();
+    expect(screen.getByText("200 SAR")).toBeInTheDocument();
+    expect(screen.getByText("إجمالي USD")).toBeInTheDocument();
+    expect(screen.getByText("50 USD")).toBeInTheDocument();
+    expect(screen.getAllByText("دون تحويل").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("طلب متعدد العملات")).toBeInTheDocument();
+    expect(screen.queryByText("غير مكتمل")).not.toBeInTheDocument();
   });
 
   it("shows a login gate and does not render protected workspace when unauthenticated", () => {
@@ -80,13 +84,11 @@ describe("Home dashboard", () => {
     expect(screen.getByRole("button", { name: "حفظ الرمز الجديد والمتابعة" })).toBeEnabled();
   });
 
-  it("opens exchange-rate settings directly from an incomplete unified total", () => {
+  it("does not expose a conversion-settings action from the dashboard totals", () => {
     render(<Home />);
 
-    fireEvent.click(screen.getByRole("button", { name: "إعداد أسعار الصرف الناقصة" }));
-
-    expect(screen.getByTestId("workspace")).toBeInTheDocument();
-    expect(new URLSearchParams(window.location.search).get("missingCurrency")).toBe("USD");
+    expect(screen.queryByRole("button", { name: "إعداد أسعار الصرف الناقصة" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/أسعار مفقودة/)).not.toBeInTheDocument();
   });
 
 });
