@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { parse as parseCookie } from "cookie";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { approvalDelegations, approvalPolicies, attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, localAuthAccounts, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, requestApprovalRoutes, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
@@ -260,7 +260,22 @@ export const appRouter = router({
   entities: router({
     companies: router({
       list: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(companies).orderBy(desc(companies.createdAt)) : []; }),
-      create: protectedProcedure.input(z.object({ name: z.string().min(2).max(180), legalName: z.string().max(220).optional(), registrationNumber: z.string().max(80).optional(), taxNumber: z.string().max(80).optional(), phone: z.string().max(40).optional(), address: z.string().max(300).optional(), logoUrl: z.string().url().max(500).optional(), defaultCurrency: z.string().length(3) })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); try { const [row] = await db.insert(companies).values({ ...input, createdBy: ctx.user.id }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "company.create", "company", row.id, input); return row; } catch (error) { if (isDuplicateKeyError(error)) throw new Error("اسم الشركة أو رقم التسجيل مستخدم مسبقاً. اختر قيمة مختلفة أو استخدم الشركة الموجودة في القائمة."); throw error; } }),
+      create: protectedProcedure.input(z.object({ name: z.string().min(2).max(180), legalName: z.string().max(220).optional(), registrationNumber: z.string().max(80).optional(), taxNumber: z.string().max(80).optional(), phone: z.string().max(40).optional(), address: z.string().max(300).optional(), logoUrl: z.string().url().max(500).optional(), defaultCurrency: z.string().length(3) })).mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+        const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+        try {
+          return await db.transaction(async (tx) => {
+            const [row] = await tx.insert(companies).values({ ...input, createdBy: ctx.user.id }).$returningId();
+            if (!row?.id) throw new Error("تعذر إنشاء الشركة");
+            const years = await tx.select({ id: fiscalYears.id }).from(fiscalYears).orderBy(desc(fiscalYears.year));
+            if (years.length) {
+              await tx.insert(sequenceSettings).values(years.map((year) => ({ fiscalYearId: year.id, companyId: row.id, prefix: `TRZ-C${row.id}`.slice(0, 24), nextValue: 1, padding: 5 })));
+            }
+            await writeEntityAudit(tx, ctx.user.id, "company.create", "company", row.id, { ...input, sequenceYears: years.length });
+            return row;
+          });
+        } catch (error) { if (isDuplicateKeyError(error)) throw new Error("اسم الشركة أو رقم التسجيل مستخدم مسبقاً. اختر قيمة مختلفة أو استخدم الشركة الموجودة في القائمة."); throw error; }
+      }),
       update: protectedProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).max(180), legalName: z.string().max(220).optional(), registrationNumber: z.string().max(80).optional(), taxNumber: z.string().max(80).optional(), phone: z.string().max(40).optional(), address: z.string().max(300).optional(), logoUrl: z.string().url().max(500).optional(), defaultCurrency: z.string().length(3) })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select().from(companies).where(eq(companies.id, input.id)).limit(1); await db.update(companies).set({ name: input.name, legalName: input.legalName, registrationNumber: input.registrationNumber, taxNumber: input.taxNumber, phone: input.phone, address: input.address, logoUrl: input.logoUrl, defaultCurrency: input.defaultCurrency }).where(eq(companies.id, input.id)); await writeEntityAudit(db, ctx.user.id, "company.update", "company", input.id, input, previous ? { name: previous.name, legalName: previous.legalName, registrationNumber: previous.registrationNumber, defaultCurrency: previous.defaultCurrency } : undefined); return { success: true }; }),
       remove: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [previous] = await db.select({ isActive: companies.isActive }).from(companies).where(eq(companies.id, input.id)).limit(1); await db.update(companies).set({ isActive: false }).where(eq(companies.id, input.id)); await writeEntityAudit(db, ctx.user.id, "company.deactivate", "company", input.id, { isActive: false }, previous ? { isActive: previous.isActive } : undefined); return { success: true }; }),
     }),
@@ -293,7 +308,27 @@ export const appRouter = router({
   calendar: router({
     list: protectedProcedure.input(z.object({ from: z.date().optional(), to: z.date().optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; const rows = await db.select().from(paymentCalendarEntries).orderBy(paymentCalendarEntries.dueDate); return rows.filter((row) => (!input?.from || row.dueDate >= input.from) && (!input?.to || row.dueDate <= input.to)); }),
     create: protectedProcedure.input(z.object({ companyId: z.number().int().positive(), beneficiaryId: z.number().int().positive().optional(), title: z.string().min(3).max(240), amount: z.number().positive(), currency: z.string().length(3), dueDate: z.date(), notes: z.string().max(2000).optional() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [row] = await db.insert(paymentCalendarEntries).values({ ...input, amount: input.amount.toFixed(4), createdBy: ctx.user.id }).$returningId(); if (row?.id) await writeEntityAudit(db, ctx.user.id, "calendar.create", "payment_calendar_entry", row.id, input); return row; }),
-    convert: protectedProcedure.input(z.object({ entryId: z.number().int().positive(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); const [entry] = await db.select().from(paymentCalendarEntries).where(eq(paymentCalendarEntries.id, input.entryId)).limit(1); if (!entry || !entry.beneficiaryId) throw new Error("الموعد يحتاج إلى مستفيد قبل التحويل"); const [sequence] = await db.select().from(sequenceSettings).where(eq(sequenceSettings.fiscalYearId, input.fiscalYearId)).limit(1); const [year] = await db.select().from(fiscalYears).where(eq(fiscalYears.id, input.fiscalYearId)).limit(1); if (!sequence || !year) throw new Error("إعدادات السنة والتسلسل غير مكتملة"); const referenceNumber = `${sequence.prefix}-${year.year}-${String(sequence.nextValue).padStart(sequence.padding, "0")}`; await db.transaction(async (tx) => { const sequenceUpdate = await tx.update(sequenceSettings).set({ nextValue: sequence.nextValue + 1 }).where(and(eq(sequenceSettings.id, sequence.id), eq(sequenceSettings.nextValue, sequence.nextValue))); if (sequenceUpdate[0]?.affectedRows !== 1) throw new Error("تعذر حجز الرقم المرجعي؛ أعد المحاولة"); const [created] = await tx.insert(disbursementRequests).values({ referenceNumber, companyId: entry.companyId, beneficiaryId: entry.beneficiaryId!, channelId: input.channelId, fiscalYearId: input.fiscalYearId, title: entry.title, description: entry.notes, amount: entry.amount, currency: entry.currency, amountInWords: amountInArabicWords(Number(entry.amount), entry.currency), scheduledFor: entry.dueDate, createdBy: ctx.user.id, status: "draft" }).$returningId(); if (!created?.id) throw new Error("تعذر إنشاء الطلب"); await tx.update(paymentCalendarEntries).set({ convertedRequestId: created.id }).where(eq(paymentCalendarEntries.id, entry.id)); await writeWorkflowEvent(tx, created.id, null, "draft", ctx.user.id, "تحويل من التقويم"); await writeEntityAudit(tx, ctx.user.id, "calendar.convert", "payment_calendar_entry", entry.id, { convertedRequestId: created.id }, { convertedRequestId: null }); }); return { referenceNumber }; }),
+    convert: protectedProcedure.input(z.object({ entryId: z.number().int().positive(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      return db.transaction(async (tx) => {
+        const [entry] = await tx.select().from(paymentCalendarEntries).where(eq(paymentCalendarEntries.id, input.entryId)).limit(1);
+        if (!entry || !entry.beneficiaryId) throw new Error("الموعد يحتاج إلى مستفيد قبل التحويل");
+        if (entry.convertedRequestId) throw new Error("تم تحويل هذا الموعد إلى طلب صرف مسبقاً");
+        const [sequence] = await tx.select().from(sequenceSettings).where(and(eq(sequenceSettings.fiscalYearId, input.fiscalYearId), eq(sequenceSettings.companyId, entry.companyId))).limit(1);
+        const [year] = await tx.select().from(fiscalYears).where(eq(fiscalYears.id, input.fiscalYearId)).limit(1);
+        if (!sequence || !year) throw new Error("إعدادات السنة والتسلسل غير مكتملة");
+        const referenceNumber = `${sequence.prefix}-${year.year}-${String(sequence.nextValue).padStart(sequence.padding, "0")}`;
+        const sequenceUpdate = await tx.update(sequenceSettings).set({ nextValue: sequence.nextValue + 1 }).where(and(eq(sequenceSettings.id, sequence.id), eq(sequenceSettings.nextValue, sequence.nextValue)));
+        if (sequenceUpdate[0]?.affectedRows !== 1) throw new Error("تعذر حجز الرقم المرجعي؛ أعد المحاولة");
+        const [created] = await tx.insert(disbursementRequests).values({ referenceNumber, companyId: entry.companyId, beneficiaryId: entry.beneficiaryId, channelId: input.channelId, fiscalYearId: input.fiscalYearId, title: entry.title, description: entry.notes, amount: entry.amount, currency: entry.currency, amountInWords: amountInArabicWords(Number(entry.amount), entry.currency), scheduledFor: entry.dueDate, createdBy: ctx.user.id, status: "draft" }).$returningId();
+        if (!created?.id) throw new Error("تعذر إنشاء الطلب");
+        const calendarUpdate = await tx.update(paymentCalendarEntries).set({ convertedRequestId: created.id }).where(and(eq(paymentCalendarEntries.id, entry.id), isNull(paymentCalendarEntries.convertedRequestId)));
+        if (calendarUpdate[0]?.affectedRows !== 1) throw new Error("تم تحويل هذا الموعد بالتزامن؛ أعد تحميل القائمة");
+        await writeWorkflowEvent(tx, created.id, null, "draft", ctx.user.id, "تحويل من التقويم");
+        await writeEntityAudit(tx, ctx.user.id, "calendar.convert", "payment_calendar_entry", entry.id, { convertedRequestId: created.id }, { convertedRequestId: null });
+        return { referenceNumber };
+      });
+    }),
   }),
   audit: router({
     list: protectedProcedure.input(z.object({ entityType: z.string().max(80).optional(), entityId: z.string().max(80).optional(), action: z.string().max(80).optional(), from: z.date().optional(), to: z.date().optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(500); return rows.filter((row) => (!input?.entityType || row.entityType === input.entityType) && (!input?.entityId || row.entityId === input.entityId) && (!input?.action || row.action === input.action) && (!input?.from || row.createdAt >= input.from) && (!input?.to || row.createdAt <= input.to)); }),
@@ -305,7 +340,7 @@ export const appRouter = router({
   }),
   settings: router({
     fiscalYears: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(fiscalYears).orderBy(desc(fiscalYears.year)) : []; }),
-    createFiscalYear: protectedProcedure.input(z.object({ year: z.number().int().min(2000).max(2200), label: z.string().min(2).max(80), startsOn: z.date(), endsOn: z.date(), isCurrent: z.boolean().optional(), prefix: z.string().min(2).max(24).optional(), padding: z.number().int().min(1).max(12).optional() })).mutation(async ({ input, ctx }) => {
+    createFiscalYear: protectedProcedure.input(z.object({ year: z.number().int().min(2000).max(2200), label: z.string().min(2).max(80), startsOn: z.date(), endsOn: z.date(), isCurrent: z.boolean().optional(), prefix: z.string().regex(/^[A-Z0-9_-]{2,20}$/).optional(), padding: z.number().int().min(1).max(12).optional() })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
       if (input.endsOn <= input.startsOn) throw new Error("تاريخ نهاية السنة يجب أن يكون بعد تاريخ البداية");
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
@@ -313,10 +348,25 @@ export const appRouter = router({
         if (input.isCurrent) await tx.update(fiscalYears).set({ isCurrent: false });
         const [created] = await tx.insert(fiscalYears).values({ year: input.year, label: input.label, startsOn: input.startsOn, endsOn: input.endsOn, isCurrent: input.isCurrent ?? false }).$returningId();
         if (!created?.id) throw new Error("تعذر إنشاء السنة المالية");
-        await tx.insert(sequenceSettings).values({ fiscalYearId: created.id, prefix: input.prefix ?? "TRZ", nextValue: 1, padding: input.padding ?? 5 });
-        await writeEntityAudit(tx, ctx.user.id, "fiscal_year.create", "fiscal_year", created.id, input);
+        const activeCompanies = await tx.select({ id: companies.id }).from(companies).where(eq(companies.isActive, true));
+        if (!activeCompanies.length) throw new Error("أضف شركة نشطة قبل إنشاء السنة المالية");
+        const basePrefix = (input.prefix ?? "TRZ").toUpperCase();
+        await tx.insert(sequenceSettings).values(activeCompanies.map((company) => ({ fiscalYearId: created.id, companyId: company.id, prefix: `${basePrefix}-C${company.id}`.slice(0, 24), nextValue: 1, padding: input.padding ?? 5 })));
+        await writeEntityAudit(tx, ctx.user.id, "fiscal_year.create", "fiscal_year", created.id, { ...input, companyCount: activeCompanies.length });
         return created;
       });
+    }),
+    sequenceSettings: protectedProcedure.input(z.object({ fiscalYearId: z.number().int().positive().optional(), companyId: z.number().int().positive().optional() }).optional()).query(async ({ input }) => {
+      const db = await getDb(); if (!db) return [];
+      const conditions = []; if (input?.fiscalYearId) conditions.push(eq(sequenceSettings.fiscalYearId, input.fiscalYearId)); if (input?.companyId) conditions.push(eq(sequenceSettings.companyId, input.companyId));
+      return db.select({ id: sequenceSettings.id, fiscalYearId: sequenceSettings.fiscalYearId, companyId: sequenceSettings.companyId, prefix: sequenceSettings.prefix, nextValue: sequenceSettings.nextValue, padding: sequenceSettings.padding, companyName: companies.name, fiscalYear: fiscalYears.year }).from(sequenceSettings).innerJoin(companies, eq(sequenceSettings.companyId, companies.id)).innerJoin(fiscalYears, eq(sequenceSettings.fiscalYearId, fiscalYears.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(fiscalYears.year), companies.name);
+    }),
+    updateSequencePrefix: protectedProcedure.input(z.object({ id: z.number().int().positive(), prefix: z.string().regex(/^[A-Z0-9_-]{2,24}$/), padding: z.number().int().min(1).max(12).optional() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("صلاحية المدير مطلوبة");
+      const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة");
+      const [previous] = await db.select().from(sequenceSettings).where(eq(sequenceSettings.id, input.id)).limit(1); if (!previous) throw new Error("إعداد التسلسل غير موجود");
+      try { await db.update(sequenceSettings).set({ prefix: input.prefix.toUpperCase(), ...(input.padding === undefined ? {} : { padding: input.padding }) }).where(eq(sequenceSettings.id, input.id)); } catch (error) { if (isDuplicateKeyError(error)) throw new Error("البادئة مستخدمة لشركة أو سنة أخرى"); throw error; }
+      await writeEntityAudit(db, ctx.user.id, "sequence.update", "sequence_setting", input.id, { prefix: input.prefix.toUpperCase(), padding: input.padding ?? previous.padding }, { prefix: previous.prefix, padding: previous.padding }); return { success: true } as const;
     }),
     currencies: protectedProcedure.query(async () => { const db = await getDb(); return db ? db.select().from(currencies).where(eq(currencies.isActive, true)).orderBy(currencies.code) : []; }),
     createCurrency: protectedProcedure.input(z.object({ code: z.string().regex(/^[A-Z]{3,8}$/), nameAr: z.string().min(2).max(80), nameEn: z.string().min(2).max(80), symbol: z.string().min(1).max(12), decimals: z.number().int().min(0).max(6).optional() })).mutation(async ({ input, ctx }) => {
@@ -422,7 +472,7 @@ export const appRouter = router({
         const normalizedBankAccountId = await validateRequestChannelAndBank(tx, input.channelId, input.beneficiaryId, input.bankAccountId);
         const [year] = await tx.select().from(fiscalYears).where(eq(fiscalYears.id, input.fiscalYearId)).limit(1);
         if (!year) throw new Error("السنة المالية غير موجودة");
-        const [sequence] = await tx.select().from(sequenceSettings).where(eq(sequenceSettings.fiscalYearId, input.fiscalYearId)).limit(1);
+        const [sequence] = await tx.select().from(sequenceSettings).where(and(eq(sequenceSettings.fiscalYearId, input.fiscalYearId), eq(sequenceSettings.companyId, input.companyId))).limit(1);
         if (!sequence) throw new Error("لم يتم إعداد تسلسل السنة المالية");
         const serial = String(sequence.nextValue).padStart(sequence.padding, "0");
         const referenceNumber = `${sequence.prefix}-${year.year}-${serial}`;

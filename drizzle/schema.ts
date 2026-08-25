@@ -161,11 +161,15 @@ export const fiscalYears = mysqlTable("fiscal_years", {
 export const sequenceSettings = mysqlTable("sequence_settings", {
   id: int("id").autoincrement().primaryKey(),
   fiscalYearId: int("fiscalYearId").notNull(),
-  prefix: varchar("prefix", { length: 24 }).default("TRZ").notNull(),
+  companyId: int("companyId").notNull(),
+  prefix: varchar("prefix", { length: 24 }).notNull(),
   nextValue: int("nextValue").default(1).notNull(),
   padding: int("padding").default(5).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({ fiscalIdx: uniqueIndex("sequence_fiscal_idx").on(table.fiscalYearId) }));
+}, (table) => ({
+  fiscalCompanyIdx: uniqueIndex("sequence_fiscal_company_idx").on(table.fiscalYearId, table.companyId),
+  fiscalPrefixIdx: uniqueIndex("sequence_fiscal_prefix_idx").on(table.fiscalYearId, table.prefix),
+}));
 
 export const approvalStage = mysqlEnum("approval_stage", ["accountant", "reviewer", "cfo", "gm", "auditor"]);
 

@@ -40,4 +40,38 @@ describe("reference sequence atomic reservation", () => {
     expect(fulfilled?.value.referenceNumber).toBe("TR-2026-0012");
     expect(reserved).toBe(true);
   });
+
+  it("isolates reference prefixes and counters between two companies", async () => {
+    let transactionNumber = 0;
+    const makeTransaction = (prefix: string, nextValue: number): Transaction => {
+      let selectCalls = 0;
+      return {
+        select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => {
+          selectCalls += 1;
+          if (selectCalls === 1) return [{ id: 1, isActive: true, code: "cashier", name: "صراف" }];
+          if (selectCalls === 2) return [{ id: 7, year: 2026 }];
+          return [{ id: 70, fiscalYearId: 7, companyId: transactionNumber, prefix, nextValue, padding: 4 }];
+        }) })) })) })),
+        update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => [{ affectedRows: 1 }]) })) })),
+        insert: vi.fn(() => ({ values: vi.fn(() => ({ $returningId: vi.fn().mockResolvedValue([{ id: ++transactionNumber }]) })) })),
+      };
+    };
+    const fakeDb = { transaction: vi.fn(async (callback: (transaction: Transaction) => Promise<unknown>) => {
+      transactionNumber += 1;
+      const companySequence = transactionNumber === 1 ? makeTransaction("ALPHA", 1) : makeTransaction("BETA", 1);
+      return callback(companySequence);
+    }) };
+    vi.spyOn(database, "getDb").mockResolvedValue(fakeDb as never);
+    const caller = appRouter.createCaller(context(501));
+    const baseInput = { beneficiaryId: 1, channelId: 1, fiscalYearId: 7, title: "طلب عزل", amount: 100, currency: "YER" as const };
+
+    const [alpha, beta] = await Promise.all([
+      caller.requests.createDraft({ ...baseInput, companyId: 1 }),
+      caller.requests.createDraft({ ...baseInput, companyId: 2 }),
+    ]);
+
+    expect(alpha.referenceNumber).toBe("ALPHA-2026-0001");
+    expect(beta.referenceNumber).toBe("BETA-2026-0001");
+    expect(alpha.referenceNumber).not.toBe(beta.referenceNumber);
+  });
 });
