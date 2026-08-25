@@ -728,3 +728,11 @@
 - [x] Add independent currency amount and request-count charts to the general manager dashboard.
 - [x] Add unit tests for request export mapping and independent currency summaries.
 - [x] Run final production build and complete handover documentation.
+
+## إصلاح اختيار جهة الصرف — 2026-08-25
+
+- [x] تحديد سبب عدم ظهور خيار «بنك» والبنوك في نموذج طلب الصرف.
+- [x] إظهار اختيار واضح ومتكامل بين قناة «صراف» وقناة «بنك» مع الحفاظ على المسار الحالي.
+- [x] ربط اختيار البنك بقائمة البنوك/الحسابات المرتبطة بالمستفيد دون تغيير البيانات القائمة.
+- [x] إضافة اختبار واجهة أو وحدة لمساري الصراف والبنك، ثم تشغيل TypeScript وVitest وProduction Build والتحقق البصري.
+- [x] تحديث محضر التسليم بنتيجة الإصلاح وحفظ نقطة إصدار جديدة.

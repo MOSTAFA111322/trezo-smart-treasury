@@ -15,7 +15,7 @@ vi.mock("@/lib/trpc", () => ({
     entities: {
       companies: { list: { useQuery: () => ({ data: [{ id: 1, name: "شركة تجريبية" }] }) } },
       beneficiaries: { list: { useQuery: () => ({ data: [{ id: 2, name: "مستفيد تجريبي" }] }) } },
-      channels: { list: { useQuery: () => ({ data: [{ id: 3, name: "قناة بنك", code: "bank" }] }) } },
+      channels: { list: { useQuery: () => ({ data: [{ id: 2, name: "صراف تجريبي", code: "CASHIER" }, { id: 3, name: "قناة بنك", code: "BANK" }] }) } },
       beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [{ id: 4, bankName: "بنك تجريبي", accountName: "الحساب التشغيلي", iban: "SA001" }] }) } },
     },
     settings: {
@@ -52,6 +52,7 @@ describe("OperationalRequestModal", () => {
     await user.selectOptions(screen.getByLabelText(/العملة/), "SAR");
     await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
     await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
+    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "3");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
 
@@ -63,6 +64,17 @@ describe("OperationalRequestModal", () => {
     expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 
+  it("shows both payout types and switches the channel list to bank", async () => {
+    const user = userEvent.setup();
+    render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    expect(screen.getByRole("option", { name: "صراف" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "بنك" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    expect(screen.getByRole("option", { name: "قناة بنك" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "صراف تجريبي" })).not.toBeInTheDocument();
+  });
+
   it("submits a complete bank-channel request only after an account is selected", async () => {
     const user = userEvent.setup();
     render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
@@ -71,6 +83,7 @@ describe("OperationalRequestModal", () => {
     await user.type(screen.getByLabelText(/المبلغ/), "125");
     await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
     await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
+    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "3");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
     await user.selectOptions(screen.getByLabelText(/الحساب البنكي/), "4");
