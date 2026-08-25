@@ -48,7 +48,7 @@ function requestUserSession(cookieHeader?: string): string { return parseCookie(
 export function canAccessOwnedRequest(userRole: string, userId: number, ownerId: number | null | undefined) { return userRole === "admin" || ownerId === userId; }
 const requestInput = z.object({
   title: z.string().min(3).max(240), companyId: z.number().int().positive(), beneficiaryId: z.number().int().positive(),
-  bankAccountId: z.number().int().positive().optional(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive(),
+  bankId: z.number().int().positive().optional(), bankAccountId: z.number().int().positive().optional(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive(),
   amount: z.number().positive(), currency: z.string().min(3).max(8), scheduledFor: z.date().optional(), description: z.string().max(5000).optional(),
 });
 
@@ -89,17 +89,55 @@ export async function validateRequestChannelAndBank(
   channelId: number,
   beneficiaryId: number,
   bankAccountId: number | null | undefined,
+  requestCurrency: string,
+  selectedBankId?: number | null,
 ) {
   const [channel] = await db.select().from(disbursementChannels).where(eq(disbursementChannels.id, channelId)).limit(1);
   if (!channel || !channel.isActive) throw new Error("قناة الصرف غير موجودة أو غير مفعلة");
+
+  const normalizedCurrency = requestCurrency.trim().toUpperCase();
   const isBankChannel = channel.code.toLowerCase().includes("bank") || channel.name.includes("بنك");
-  if (isBankChannel) {
-    if (!bankAccountId) throw new Error("يجب اختيار الحساب البنكي عند استخدام قناة البنك");
-    const [account] = await db.select().from(beneficiaryBankAccounts).where(and(eq(beneficiaryBankAccounts.id, bankAccountId), eq(beneficiaryBankAccounts.beneficiaryId, beneficiaryId), eq(beneficiaryBankAccounts.isActive, true))).limit(1);
-    if (!account) throw new Error("الحساب البنكي غير مرتبط بالمستفيد أو غير مفعّل");
-    return bankAccountId;
+
+  if (!isBankChannel) {
+    if (selectedBankId) throw new Error("قناة الصراف النقدية لا تستخدم بنكاً");
+    if (bankAccountId) throw new Error("قناة الصراف النقدية لا تستخدم حساباً بنكياً");
+    return null;
   }
-  return null;
+
+  if (!bankAccountId) throw new Error("يجب اختيار الحساب البنكي عند استخدام قناة البنك");
+
+  const [account] = await db
+    .select({
+      id: beneficiaryBankAccounts.id,
+      beneficiaryId: beneficiaryBankAccounts.beneficiaryId,
+      bankId: beneficiaryBankAccounts.bankId,
+      currency: beneficiaryBankAccounts.currency,
+      accountActive: beneficiaryBankAccounts.isActive,
+      bankActive: banks.isActive,
+    })
+    .from(beneficiaryBankAccounts)
+    .innerJoin(banks, eq(banks.id, beneficiaryBankAccounts.bankId))
+    .where(and(
+      eq(beneficiaryBankAccounts.id, bankAccountId),
+      eq(beneficiaryBankAccounts.beneficiaryId, beneficiaryId),
+      eq(beneficiaryBankAccounts.isActive, true),
+      eq(banks.isActive, true),
+    ))
+    .limit(1);
+
+  if (!account || !account.accountActive || !account.bankActive) {
+    throw new Error("الحساب البنكي غير مرتبط بالمستفيد أو البنك غير مفعّل");
+  }
+
+  if (selectedBankId && account.bankId !== selectedBankId) {
+    throw new Error("الحساب البنكي لا يتبع البنك المختار");
+  }
+
+  if (account.currency.trim().toUpperCase() !== normalizedCurrency) {
+    throw new Error("عملة الحساب البنكي لا تطابق عملة الطلب");
+  }
+
+  return bankAccountId;
 }
 
 const allowedTransitions: Record<(typeof statuses)[number], (typeof statuses)[number][]> = {
@@ -469,7 +507,7 @@ export const appRouter = router({
     createDraft: protectedProcedure.input(requestInput).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
       return db.transaction(async (tx) => {
-        const normalizedBankAccountId = await validateRequestChannelAndBank(tx, input.channelId, input.beneficiaryId, input.bankAccountId);
+        const normalizedBankAccountId = await validateRequestChannelAndBank(tx, input.channelId, input.beneficiaryId, input.bankAccountId, input.currency, input.bankId);
         const [year] = await tx.select().from(fiscalYears).where(eq(fiscalYears.id, input.fiscalYearId)).limit(1);
         if (!year) throw new Error("السنة المالية غير موجودة");
         const [sequence] = await tx.select().from(sequenceSettings).where(and(eq(sequenceSettings.fiscalYearId, input.fiscalYearId), eq(sequenceSettings.companyId, input.companyId))).limit(1);
@@ -533,7 +571,14 @@ export const appRouter = router({
       if (input.toStatus === "review") updates.submittedAt = new Date();
       if (input.toStatus === "approved") updates.approvedAt = new Date();
       if (input.toStatus === "executed") updates.executedAt = new Date();
-      await db.transaction(async (tx) => { const updated = await tx.update(disbursementRequests).set(updates).where(and(eq(disbursementRequests.id, input.requestId), eq(disbursementRequests.status, request.status))); if (updated[0]?.affectedRows !== 1) throw new Error("تغيرت حالة الطلب قبل اعتماد العملية؛ أعد المحاولة"); await writeWorkflowEvent(tx, input.requestId, request.status, input.toStatus, ctx.user.id, input.comment); });
+      await db.transaction(async (tx) => {
+        if (input.toStatus === "approved" || input.toStatus === "executed") {
+          await validateRequestChannelAndBank(tx, request.channelId, request.beneficiaryId, request.bankAccountId, request.currency);
+        }
+        const updated = await tx.update(disbursementRequests).set(updates).where(and(eq(disbursementRequests.id, input.requestId), eq(disbursementRequests.status, request.status)));
+        if (updated[0]?.affectedRows !== 1) throw new Error("تغيرت حالة الطلب قبل اعتماد العملية؛ أعد المحاولة");
+        await writeWorkflowEvent(tx, input.requestId, request.status, input.toStatus, ctx.user.id, input.comment);
+      });
       return { requestId: input.requestId, status: input.toStatus };
     }),
     update: protectedProcedure.input(z.object({ requestId: z.number().int().positive(), title: z.string().min(2).max(240), description: z.string().max(5000).optional(), amount: z.number().positive(), currency: z.string().min(3).max(8), beneficiaryId: z.number().int().positive(), bankAccountId: z.number().int().positive().nullable().optional(), channelId: z.number().int().positive(), fiscalYearId: z.number().int().positive(), scheduledFor: z.date().nullable().optional() })).mutation(async ({ input, ctx }) => {
@@ -549,7 +594,7 @@ export const appRouter = router({
       }
       const canEdit = ctx.user.role === "admin" || request.createdBy === ctx.user.id && (request.status === "draft" || request.status === "rejected") && (roleNames.has("accountant") || roleNames.has("reviewer") || assignedRoleCount === 0);
       if (!canEdit) throw new Error("لا يمكن تعديل الطلب إلا في المسودة أو بعد إعادته للمحاسب");
-      const normalizedBankAccountId = await validateRequestChannelAndBank(db, input.channelId, input.beneficiaryId, input.bankAccountId);
+      const normalizedBankAccountId = await validateRequestChannelAndBank(db, input.channelId, input.beneficiaryId, input.bankAccountId, input.currency);
       const amountInWords = amountInArabicWords(input.amount, input.currency);
       await db.update(disbursementRequests).set({ title: input.title, description: input.description, amount: input.amount.toFixed(4), currency: input.currency.toUpperCase(), amountInWords, beneficiaryId: input.beneficiaryId, bankAccountId: normalizedBankAccountId, channelId: input.channelId, fiscalYearId: input.fiscalYearId, scheduledFor: input.scheduledFor ?? null }).where(eq(disbursementRequests.id, input.requestId));
       await writeEntityAudit(db, ctx.user.id, "request.update", "disbursement_request", input.requestId, input, request);

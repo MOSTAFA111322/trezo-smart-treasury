@@ -17,7 +17,7 @@ vi.mock("@/lib/trpc", () => ({
       beneficiaries: { list: { useQuery: () => ({ data: [{ id: 2, name: "مستفيد تجريبي" }] }) } },
       channels: { list: { useQuery: () => ({ data: [{ id: 2, name: "صراف تجريبي", code: "CASHIER" }, { id: 3, name: "قناة بنك", code: "BANK" }] }) } },
       banks: { list: { useQuery: () => ({ data: [{ id: 7, name: "بنك تجريبي" }, { id: 8, name: "بنك ثانٍ" }] }) } },
-      beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [{ id: 4, bankId: 7, bankName: "بنك تجريبي", accountName: "الحساب التشغيلي", iban: "SA001" }] }) } },
+      beneficiaryBankAccounts: { list: { useQuery: () => ({ data: [{ id: 4, bankId: 7, bankName: "بنك تجريبي", accountName: "الحساب التشغيلي", iban: "SA001", currency: "YER" }] }) } },
     },
     settings: {
       fiscalYears: { useQuery: () => ({ data: [{ id: 5, year: 2026 }] }) },
@@ -52,8 +52,8 @@ describe("OperationalRequestModal", () => {
     await user.type(screen.getByLabelText(/المبلغ/), "200");
     await user.selectOptions(screen.getByLabelText(/العملة/), "SAR");
     await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
-    await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
-    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    await user.selectOptions(screen.getByLabelText(/^المستفيد/), "2");
+    await user.click(screen.getByRole("radio", { name: /تحويل بنكي/ }));
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "3");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
 
@@ -69,9 +69,9 @@ describe("OperationalRequestModal", () => {
     const user = userEvent.setup();
     render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
 
-    expect(screen.getByRole("option", { name: "صراف" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "بنك" })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    expect(screen.getByRole("radio", { name: /صراف نقدي/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /تحويل بنكي/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /تحويل بنكي/ }));
     expect(screen.getByRole("option", { name: "قناة بنك" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "صراف تجريبي" })).not.toBeInTheDocument();
   });
@@ -80,7 +80,7 @@ describe("OperationalRequestModal", () => {
     const user = userEvent.setup();
     render(<OperationalRequestModal onClose={vi.fn()} onCreated={vi.fn()} />);
 
-    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    await user.click(screen.getByRole("radio", { name: /تحويل بنكي/ }));
     await user.selectOptions(screen.getByLabelText(/^البنك/), "7");
 
     expect(screen.getByRole("option", { name: "بنك تجريبي" })).toBeInTheDocument();
@@ -95,8 +95,8 @@ describe("OperationalRequestModal", () => {
     await user.type(screen.getByLabelText(/وصف الطلب/), "صرف نقدي");
     await user.type(screen.getByLabelText(/المبلغ/), "125");
     await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
-    await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
-    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "cashier");
+    await user.selectOptions(screen.getByLabelText(/^المستفيد/), "2");
+    await user.click(screen.getByRole("radio", { name: /صراف نقدي/ }));
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "2");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
     await user.click(screen.getByRole("button", { name: /إنشاء المسودة/ }));
@@ -111,8 +111,8 @@ describe("OperationalRequestModal", () => {
     await user.type(screen.getByLabelText(/وصف الطلب/), "مستحقات مورد");
     await user.type(screen.getByLabelText(/المبلغ/), "125");
     await user.selectOptions(screen.getByLabelText(/الشركة/), "1");
-    await user.selectOptions(screen.getByLabelText(/المستفيد/), "2");
-    await user.selectOptions(screen.getByLabelText(/نوع جهة الصرف/), "bank");
+    await user.selectOptions(screen.getByLabelText(/^المستفيد/), "2");
+    await user.click(screen.getByRole("radio", { name: /تحويل بنكي/ }));
     await user.selectOptions(screen.getByLabelText(/قناة الصرف/), "3");
     await user.selectOptions(screen.getByLabelText(/السنة المالية/), "5");
     await user.selectOptions(screen.getByLabelText(/^البنك/), "7");
@@ -125,6 +125,7 @@ describe("OperationalRequestModal", () => {
       currency: "YER",
       companyId: 1,
       beneficiaryId: 2,
+      bankId: 7,
       bankAccountId: 4,
       channelId: 3,
       fiscalYearId: 5,

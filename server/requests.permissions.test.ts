@@ -23,7 +23,7 @@ function selectChain(value: unknown) {
 }
 
 function mockTransitionDb(permissionAssigned: boolean, route: unknown[] = [], status: "review" | "draft" = "review") {
-  const request = { id: 4, status, createdBy: 7 };
+  const request = { id: 4, status, createdBy: 7, channelId: 8, beneficiaryId: 3, bankAccountId: null, currency: "YER" };
   const select = vi.fn();
   // transition order: request, saved route, user roles, active delegations, role, permission.
   const selectResults = [
@@ -38,6 +38,7 @@ function mockTransitionDb(permissionAssigned: boolean, route: unknown[] = [], st
   for (const result of selectResults) select.mockReturnValueOnce(selectChain(result));
 
   const tx = {
+    select: vi.fn(() => selectChain([{ id: 8, code: "cashier", name: "صراف", isActive: true }])),
     update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) }) }),
     insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue([]) }),
   };
