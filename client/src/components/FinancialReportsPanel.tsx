@@ -1,20 +1,7 @@
 import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText, RefreshCw } from "lucide-react";
-import { jsPDF } from "jspdf";
 import { trpc } from "@/lib/trpc";
-import { financialReportCsv, financialReportExcelHtml } from "@shared/financialReport";
-
-function downloadCsv(contents: string, filename: string) {
-  const blob = new Blob(["\ufeff", contents], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
+import { downloadCsv, downloadExcel, downloadPdf } from "@/lib/reportExports";
 
 export function FinancialReportsPanel() {
   const [companyId, setCompanyId] = useState<number | undefined>();
@@ -32,34 +19,14 @@ export function FinancialReportsPanel() {
   const currencyCounts = rows.reduce<Record<string, number>>((counts, row) => { counts[row.currency] = (counts[row.currency] ?? 0) + 1; return counts; }, {});
   const summaryLabel = Object.entries(currencyCounts).map(([currency, count]) => `${currency}: ${count}`).join(" · ");
   const scope = [companyId ? "company" : "all-companies", fiscalYearId ? "year" : "all-years"].join("-");
-  const exportReport = async () => { if (isExporting) return; setIsExporting(true); setExportMessage(""); try { await logExport.mutateAsync({ format: "csv", ...filters, recordCount: rows.length }); downloadCsv(financialReportCsv(rows), `trezo-financial-report-${scope}.csv`); } catch (error) { setExportMessage(`تعذر تصدير CSV: ${error instanceof Error ? error.message : "أعد المحاولة"}`); } finally { setIsExporting(false); } };
-  const exportExcel = async () => { if (isExporting) return; setIsExporting(true); setExportMessage(""); try { await logExport.mutateAsync({ format: "xlsx", ...filters, recordCount: rows.length }); downloadCsv(financialReportExcelHtml(rows), `trezo-financial-report-${scope}.xls`); } catch (error) { setExportMessage(`تعذر تصدير Excel: ${error instanceof Error ? error.message : "أعد المحاولة"}`); } finally { setIsExporting(false); } };
+  const exportReport = async () => { if (isExporting) return; setIsExporting(true); setExportMessage(""); try { await logExport.mutateAsync({ format: "csv", ...filters, recordCount: rows.length }); downloadCsv(rows, `trezo-financial-report-${scope}.csv`); } catch (error) { setExportMessage(`تعذر تصدير CSV: ${error instanceof Error ? error.message : "أعد المحاولة"}`); } finally { setIsExporting(false); } };
+  const exportExcel = async () => { if (isExporting) return; setIsExporting(true); setExportMessage(""); try { await logExport.mutateAsync({ format: "xlsx", ...filters, recordCount: rows.length }); downloadExcel(rows, `trezo-financial-report-${scope}.xls`); } catch (error) { setExportMessage(`تعذر تصدير Excel: ${error instanceof Error ? error.message : "أعد المحاولة"}`); } finally { setIsExporting(false); } };
   const exportPdf = async () => {
     if (isExporting) return;
     setIsExporting(true); setExportMessage("");
     try {
     await logExport.mutateAsync({ format: "pdf", ...filters, recordCount: rows.length });
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    doc.setFontSize(16); doc.text("TREZO Smart Treasury", 14, 16);
-    doc.setFontSize(11); doc.text("Official Financial Disbursement Report", 14, 23);
-    doc.setFontSize(9); doc.text("OFFICIAL / APPROVED REPORT", 14, 30);
-    doc.setFontSize(8); doc.text(`Scope: ${companyId ? `Company #${companyId}` : "All companies"} | ${fiscalYearId ? `Fiscal year #${fiscalYearId}` : "All fiscal years"}`, 14, 35);
-    doc.setFontSize(8); doc.text(`Summary: ${rows.length} records | Total amount: ${totalAmount.toLocaleString("en-US")} | ${summaryLabel || "No currency data"}`, 14, 40);
-    doc.setFontSize(7); doc.text(`Prepared by TREZO Smart Treasury · Generated ${new Date().toISOString()} · Approval status: System export audit recorded`, 14, 45);
-    const headers = ["Reference", "Company", "Fiscal year", "Beneficiary", "Title", "Amount", "Currency", "Status", "Scheduled", "Created"];
-    const x = [14, 43, 78, 101, 132, 191, 217, 235, 258, 280];
-    const drawTableHeader = () => { doc.setFontSize(7); headers.forEach((header, index) => doc.text(header, x[index], 50)); doc.line(14, 52, 284, 52); };
-    drawTableHeader();
-    rows.forEach((row, rowIndex) => {
-      const pageRow = rowIndex % 28;
-      if (rowIndex > 0 && pageRow === 0) { doc.addPage(); drawTableHeader(); }
-      const y = 58 + pageRow * 7;
-      const values = [row.referenceNumber, row.companyName, String(row.fiscalYear), row.beneficiaryName, row.title, row.amount, row.currency, row.status, row.scheduledFor ? new Date(row.scheduledFor).toISOString().slice(0, 10) : "-", new Date(row.createdAt).toISOString().slice(0, 10)];
-      values.forEach((value, index) => doc.text(String(value ?? "-").slice(0, index === 4 ? 32 : 18), x[index], y));
-      doc.setDrawColor(225); doc.line(14, y + 2, 284, y + 2); doc.setDrawColor(0);
-    });
-    doc.setFontSize(8); doc.text(`Generated ${new Date().toISOString()} | Records: ${rows.length} | Official audit event recorded`, 14, 260);
-    doc.save(`trezo-financial-report-${scope}.pdf`);
+    downloadPdf(rows, `trezo-financial-report-${scope}.pdf`, `${companyId ? `Company #${companyId}` : "All companies"} | ${fiscalYearId ? `Fiscal year #${fiscalYearId}` : "All fiscal years"}`);
     } catch (error) { setExportMessage(`تعذر تصدير PDF: ${error instanceof Error ? error.message : "أعد المحاولة"}`); } finally { setIsExporting(false); }
   };
 

@@ -709,3 +709,22 @@
 - [x] تطبيق التحسينات المفيدة الآمنة التي لا تغيّر المصادقة أو دورة الاعتماد أو البيانات القائمة
 - [ ] استكمال الفحص التجريبي للطباعة والتصدير والصلاحيات ومسارات الصرف الممكنة
 - [ ] توثيق أي قيود تشغيلية متبقية وخطة معالجتها قبل التسليم الرسمي
+
+## تحسينات التقارير والمتابعة
+
+- [ ] إضافة تصدير جدول طلبات الصرف المفلتر إلى Excel
+- [ ] إضافة تصدير جدول طلبات الصرف المفلتر إلى PDF
+- [ ] إظهار مؤشرات حالة واضحة لكل طلب صرف وربطها بمراحل الاعتماد الفعلية
+- [ ] إضافة أو تحسين رسم إجماليات المبالغ لكل عملة دون تحويل بين العملات
+- [ ] تحديث اختبارات التصدير ومؤشرات الحالة والرسوم
+- [ ] تشغيل TypeScript وVitest وProduction Build والتحقق البصري ثم حفظ checkpoint
+
+## Final reporting enhancements — 2026-08-25
+
+- [x] Add direct Excel export for the filtered disbursement requests table.
+- [x] Add direct PDF export for the filtered disbursement requests table.
+- [x] Reuse the shared financial report export helpers for CSV/Excel/PDF output.
+- [x] Add clearer color-and-icon status indicators for the five approval statuses.
+- [x] Add independent currency amount and request-count charts to the general manager dashboard.
+- [x] Add unit tests for request export mapping and independent currency summaries.
+- [x] Run final production build and complete handover documentation.
