@@ -6,6 +6,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 const emptyQuery = () => ({ data: [], isLoading: false, error: null, refetch: vi.fn() });
 const mutation = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, error: null });
 const auditRows = [{ id: 1, action: "report.export.pdf", entityType: "financial_report", entityId: "1", createdAt: new Date("2026-08-18T12:00:00Z") }];
+const baseRequestRows = [{ id: 9, referenceNumber: "TRZ-00009", title: "شراء مستلزمات", amount: "1000", currency: "YER", status: "draft", companyId: 1, beneficiaryId: 2, channelId: 3, scheduledFor: new Date("2026-08-20T00:00:00Z"), createdAt: new Date("2026-08-18T00:00:00Z"), approvalStages: ["accountant", "reviewer", "cfo", "gm"], reviewerConfirmed: false }];
+let requestRows = baseRequestRows;
+let currentOperationalRoles = ["accountant"];
 
 function trpcProxy(path: string[] = []): object {
   return new Proxy({}, {
@@ -14,12 +17,13 @@ function trpcProxy(path: string[] = []): object {
         return () => {
           const key = path.join(".");
           if (key === "dashboard.unified") return { data: { missingRates: ["USD"] }, isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "auth.currentProfile") return { data: { operationalRoles: currentOperationalRoles }, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "audit.list") return { data: auditRows, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "permissions.list") return { data: { roleId: null, keys: [] }, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "entities.companies.list") return { data: [{ id: 1, name: "شركة TREZO" }], isLoading: false, error: null, refetch: vi.fn() };
           if (key === "entities.beneficiaries.list") return { data: [{ id: 2, name: "مستفيد تجريبي", companyId: 1 }], isLoading: false, error: null, refetch: vi.fn() };
           if (key === "entities.channels.list") return { data: [{ id: 3, name: "البنك" }], isLoading: false, error: null, refetch: vi.fn() };
-          if (key === "requests.list") return { data: [{ id: 9, referenceNumber: "TRZ-00009", title: "شراء مستلزمات", amount: "1000", currency: "YER", status: "draft", companyId: 1, beneficiaryId: 2, channelId: 3, scheduledFor: new Date("2026-08-20T00:00:00Z"), createdAt: new Date("2026-08-18T00:00:00Z") }], isLoading: false, error: null, refetch: vi.fn() };
+          if (key === "requests.list") return { data: requestRows, isLoading: false, error: null, refetch: vi.fn() };
           if (key === "attachments.list") return { data: [], isLoading: false, error: null, refetch: vi.fn() };
           return emptyQuery();
         };
@@ -33,10 +37,14 @@ function trpcProxy(path: string[] = []): object {
 
 vi.mock("@/lib/trpc", () => ({ trpc: trpcProxy() }));
 
-import Workspace from "./Workspace";
+import Workspace, { getPendingRequestAction } from "./Workspace";
 
 describe("Workspace exchange-rate readiness", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    requestRows = baseRequestRows;
+    currentOperationalRoles = ["accountant"];
+  });
 
   it("guides the user to the missing pair and pre-fills the exchange-rate form", () => {
     render(<Workspace active="settings" onBack={vi.fn()} onCreateRequest={vi.fn()} />);
@@ -87,6 +95,45 @@ describe("Workspace exchange-rate readiness", () => {
     expect(screen.getAllByText("شركة TREZO").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText("من تاريخ"), { target: { value: "2026-08-21" } });
     expect(screen.getByText("لا توجد نتائج مطابقة للفلاتر الحالية.")).toBeInTheDocument();
+  });
+
+  it("identifies only the current operational step for reviewer, CFO, and GM", () => {
+    const pendingReviewer: Pick<
+      import("@/components/RequestDetailPanel").RequestRecord,
+      "status" | "approvalStages" | "reviewerConfirmed"
+    > = {
+      status: "review",
+      approvalStages: ["accountant", "reviewer", "cfo", "gm"],
+      reviewerConfirmed: false,
+    };
+    const reviewerConfirmed = { ...pendingReviewer, reviewerConfirmed: true };
+    const pendingGm = {
+      status: "approved",
+      approvalStages: ["accountant", "reviewer", "cfo", "gm"],
+      reviewerConfirmed: true,
+    };
+
+    expect(getPendingRequestAction(pendingReviewer, ["reviewer"], false)?.label).toBe("تأكيد المراجعة");
+    expect(getPendingRequestAction(pendingReviewer, ["cfo"], false)).toBeUndefined();
+    expect(getPendingRequestAction(reviewerConfirmed, ["cfo"], false)?.label).toBe("اعتماد المدير المالي");
+    expect(getPendingRequestAction(reviewerConfirmed, ["reviewer"], false)).toBeUndefined();
+    expect(getPendingRequestAction(pendingGm, ["gm"], false)?.label).toBe("تسجيل التنفيذ");
+    expect(getPendingRequestAction({ ...pendingGm, approvalStages: ["accountant", "reviewer", "cfo"] }, ["gm"], false)).toBeUndefined();
+  });
+
+  it("filters CFO requests to the reviewer-confirmed step only", () => {
+    currentOperationalRoles = ["cfo"];
+    requestRows = [
+      { ...baseRequestRows[0], title: "طلب بانتظار المراجع", status: "review", reviewerConfirmed: false },
+      { ...baseRequestRows[0], id: 10, referenceNumber: "TRZ-00010", title: "طلب بانتظار المدير المالي", status: "review", reviewerConfirmed: true },
+    ];
+    render(<Workspace active="requests" onBack={vi.fn()} onCreateRequest={vi.fn()} />);
+
+    fireEvent.click(screen.getByLabelText("طلبات بانتظار إجراءي"));
+
+    expect(screen.getByText("طلب بانتظار المدير المالي")).toBeInTheDocument();
+    expect(screen.queryByText("طلب بانتظار المراجع")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "اعتماد المدير المالي" })).toBeInTheDocument();
   });
 
   it("does not render the employee administration panel for a non-admin user", () => {

@@ -39,8 +39,8 @@ describe("operational control summaries", () => {
     render(<ExchangeRatesPanel />);
     fireEvent.click(screen.getByRole("button", { name: "عرض المعلقة فقط (1)" }));
     expect(screen.getByRole("button", { name: "عرض جميع الأسعار" })).toBeInTheDocument();
-    expect(screen.getByText("USD / YER")).toBeInTheDocument();
-    expect(screen.queryByText("EUR / YER")).not.toBeInTheDocument();
-    expect(screen.queryByText("SAR / YER")).not.toBeInTheDocument();
+    expect(screen.getByText("1 USD = 2450 YER")).toBeInTheDocument();
+    expect(screen.queryByText("1 EUR = 2800 YER")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 SAR = 650 YER")).not.toBeInTheDocument();
   });
 });

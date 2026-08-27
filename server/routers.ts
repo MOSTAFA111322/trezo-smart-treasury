@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { amountInArabicWords } from "@shared/amountInWords";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_KEYS, hasPermission } from "@shared/permissions";
 import { parse as parseCookie } from "cookie";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { approvalDelegations, approvalPolicies, attachments, auditLogs, banks, beneficiaryBankAccounts, beneficiaries, companies, currencies, disbursementChannels, disbursementRequests, exchangeRates, fiscalYears, internalEmployees, localAuthAccounts, overdueAlertConfigs, overdueAlertDeliveries, paymentCalendarEntries, permissions as permissionRows, requestApprovalRoutes, rolePermissions, roles, sequenceSettings, userRoles, users, workflowEvents } from "../drizzle/schema";
@@ -502,7 +502,34 @@ export const appRouter = router({
     deactivateDelegation: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input, ctx }) => { if (ctx.user.role !== "admin") throw new Error("إدارة التفويضات متاحة لمدير النظام فقط"); const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة"); await db.update(approvalDelegations).set({ isActive: false }).where(eq(approvalDelegations.id, input.id)); await writeEntityAudit(db, ctx.user.id, "approval.delegation.deactivate", "approval_delegation", input.id, { isActive: false }); return { success: true } as const; }),
   }),
   requests: router({
-    list: protectedProcedure.input(z.object({ status: statusSchema.optional() }).optional()).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select().from(disbursementRequests).where(input?.status ? eq(disbursementRequests.status, input.status) : undefined).orderBy(desc(disbursementRequests.createdAt)).limit(100); }),
+    list: protectedProcedure.input(z.object({ status: statusSchema.optional() }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.select().from(disbursementRequests).where(input?.status ? eq(disbursementRequests.status, input.status) : undefined).orderBy(desc(disbursementRequests.createdAt)).limit(100);
+      if (!rows.length) return [];
+
+      const requestIds = rows.map((row) => row.id);
+      const [routeRows, reviewConfirmationRows] = await Promise.all([
+        db.select({ requestId: requestApprovalRoutes.requestId, stagesSnapshot: requestApprovalRoutes.stagesSnapshot })
+          .from(requestApprovalRoutes)
+          .where(inArray(requestApprovalRoutes.requestId, requestIds)),
+        db.select({ requestId: workflowEvents.requestId })
+          .from(workflowEvents)
+          .where(and(
+            inArray(workflowEvents.requestId, requestIds),
+            eq(workflowEvents.fromStatus, "review"),
+            eq(workflowEvents.toStatus, "review"),
+          )),
+      ]);
+      const stagesByRequestId = new Map(routeRows.map((route) => [route.requestId, normalizeApprovalStages(route.stagesSnapshot)]));
+      const reviewerConfirmedRequestIds = new Set(reviewConfirmationRows.map((event) => event.requestId));
+
+      return rows.map((row) => ({
+        ...row,
+        approvalStages: stagesByRequestId.get(row.id) ?? [...DEFAULT_APPROVAL_ROUTE],
+        reviewerConfirmed: reviewerConfirmedRequestIds.has(row.id),
+      }));
+    }),
     workflow: protectedProcedure.input(z.object({ requestId: z.number().int().positive() })).query(async ({ input }) => { const db = await getDb(); if (!db) return []; return db.select({ id: workflowEvents.id, fromStatus: workflowEvents.fromStatus, toStatus: workflowEvents.toStatus, comment: workflowEvents.comment, actorId: workflowEvents.actorId, actorName: users.name, createdAt: workflowEvents.createdAt }).from(workflowEvents).leftJoin(users, eq(workflowEvents.actorId, users.id)).where(eq(workflowEvents.requestId, input.requestId)).orderBy(desc(workflowEvents.createdAt)); }),
     createDraft: protectedProcedure.input(requestInput).mutation(async ({ input, ctx }) => {
       const db = await getDb(); if (!db) throw new Error("قاعدة البيانات غير متاحة حالياً");
@@ -542,7 +569,11 @@ export const appRouter = router({
         || (routeAllows && request.status === "draft" && input.toStatus === "executed" && !stageSet.has("reviewer") && !stageSet.has("cfo"));
       if (!transitionAllowed) throw new Error("انتقال الحالة غير مسموح");
       const roleNames = new Set<string>();
-      if (ctx.user.role !== "admin") {
+      // حسابات الموظفين المحلية قد تحمل دور منصة إداري لإدارة الحسابات، لكن هذا
+      // لا يجعل المدير المالي مراجعاً. يظل تجاوز مراحل الاعتماد محصوراً بمدير
+      // المنصة المسجل عبر Manus فقط، بينما تُحل أدوار الحساب المحلي من الموظف/التفويض.
+      const isPlatformAdmin = ctx.user.role === "admin" && ctx.user.loginMethod !== "local";
+      if (!isPlatformAdmin) {
         const assignedRoles = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(userRoles.roleId, roles.id)).where(eq(userRoles.userId, ctx.user.id));
         assignedRoles.forEach((role) => roleNames.add(role.name));
         if (ctx.user.loginMethod === "local") {
@@ -560,18 +591,30 @@ export const appRouter = router({
       }
       const requiredPermission = requiredPermissionForTransition(input.toStatus);
       const hasOperationalPermission = requiredPermission ? Array.from(roleNames).some((roleName) => operationalRoleGrantsPermission(roleName, requiredPermission)) : false;
-      if (requiredPermission && !(await hasEffectivePermission(db, ctx.user.role, requiredPermission)) && !hasOperationalPermission && ctx.user.role !== "admin") throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
-      if (input.toStatus === "review" && request.status === "draft" && !roleNames.has("accountant") && ctx.user.role !== "admin") throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
-      if (input.toStatus === "review" && request.status === "review" && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("تأكيد المراجعة متاح للمراجع فقط");
-      if (input.toStatus === "approved" && stageSet.has("cfo") && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
-      if (input.toStatus === "executed" && stageSet.has("gm") && !roleNames.has("gm") && ctx.user.role !== "admin") throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
-      if (input.toStatus === "executed" && !stageSet.has("gm") && !roleNames.has("cfo") && ctx.user.role !== "admin") throw new Error("التنفيذ المفوض متاح للمدير المالي أو من ينوب عنه فقط");
-      if (input.toStatus === "draft" && !roleNames.has("accountant") && !roleNames.has("reviewer") && ctx.user.role !== "admin") throw new Error("إعادة الطلب للمسودة متاحة للمحاسب أو المراجع فقط");
+      const hasPlatformPermission = isPlatformAdmin && requiredPermission ? await hasEffectivePermission(db, ctx.user.role, requiredPermission) : false;
+      if (requiredPermission && !hasPlatformPermission && !hasOperationalPermission) throw new Error("لا تملك الصلاحية المطلوبة لهذه العملية");
+      if (input.toStatus === "review" && request.status === "draft" && !roleNames.has("accountant") && !isPlatformAdmin) throw new Error("إرسال الطلب للمراجعة متاح للمحاسب فقط");
+      if (input.toStatus === "review" && request.status === "review" && !roleNames.has("reviewer") && !isPlatformAdmin) throw new Error("تأكيد المراجعة متاح للمراجع فقط");
+      if (input.toStatus === "approved" && stageSet.has("cfo") && !roleNames.has("cfo") && !isPlatformAdmin) throw new Error("اعتماد الطلب متاح للمدير المالي فقط");
+      if (input.toStatus === "executed" && stageSet.has("gm") && !roleNames.has("gm") && !isPlatformAdmin) throw new Error("الاعتماد النهائي والتنفيذ متاحان للمدير العام فقط");
+      if (input.toStatus === "executed" && !stageSet.has("gm") && !roleNames.has("cfo") && !isPlatformAdmin) throw new Error("التنفيذ المفوض متاح للمدير المالي أو من ينوب عنه فقط");
+      if (input.toStatus === "draft" && !roleNames.has("accountant") && !roleNames.has("reviewer") && !isPlatformAdmin) throw new Error("إعادة الطلب للمسودة متاحة للمحاسب أو المراجع فقط");
       const updates: Partial<typeof disbursementRequests.$inferInsert> = { status: input.toStatus };
       if (input.toStatus === "review") updates.submittedAt = new Date();
       if (input.toStatus === "approved") updates.approvedAt = new Date();
       if (input.toStatus === "executed") updates.executedAt = new Date();
       await db.transaction(async (tx) => {
+        // تبقى مراجعة المراجع في حالة review عمداً، لذلك لا يكفي فحص الحالة
+        // المخزنة وحدها قبل انتقال المدير المالي إلى approved. نتحقق من الحدث
+        // المسجّل داخل المعاملة حتى لا تُتجاوز مرحلة المراجع في المسارات التي تتضمنها.
+        if (request.status === "review" && input.toStatus === "approved" && stageSet.has("reviewer")) {
+          const [reviewConfirmation] = await tx.select({ id: workflowEvents.id }).from(workflowEvents).where(and(
+            eq(workflowEvents.requestId, input.requestId),
+            eq(workflowEvents.fromStatus, "review"),
+            eq(workflowEvents.toStatus, "review"),
+          )).limit(1);
+          if (!reviewConfirmation) throw new Error("يلزم تأكيد المراجع للطلب قبل اعتماد المدير المالي");
+        }
         if (input.toStatus === "approved" || input.toStatus === "executed") {
           await validateRequestChannelAndBank(tx, request.channelId, request.beneficiaryId, request.bankAccountId, request.currency);
         }

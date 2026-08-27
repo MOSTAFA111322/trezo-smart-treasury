@@ -1,36 +1,194 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { formatCurrencyAmount, type CurrencyDefinition } from "@/lib/format";
 import { getOperationalProfiles } from "@shared/permissions";
-import { ArrowRight, CheckCircle2, CircleDashed, CircleX, Clock3, FileSpreadsheet, FileText, Pencil, Plus, Printer, Search, ShieldCheck, Trash2, type LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  CircleDashed,
+  CircleX,
+  Clock3,
+  FileSpreadsheet,
+  FileText,
+  Pencil,
+  Plus,
+  Printer,
+  Search,
+  ShieldCheck,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { RequestDetailPanel } from "@/components/RequestDetailPanel";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  RequestDetailPanel,
+  type RequestRecord,
+} from "@/components/RequestDetailPanel";
 import { InternalEmployeesPanel } from "@/components/InternalEmployeesPanel";
 import { FinancialReportsPanel } from "@/components/FinancialReportsPanel";
 import { OverdueAlertsCard } from "@/components/OverdueAlertsCard";
 import { ExchangeRatesPanel } from "@/components/ExchangeRatesPanel";
 import { AuditTrailPanel } from "@/components/AuditTrailPanel";
 import { ApprovalPoliciesPanel } from "@/components/ApprovalPoliciesPanel";
-import { downloadExcel, downloadPdf, toFinancialExportRows } from "@/lib/reportExports";
+import {
+  downloadExcel,
+  downloadPdf,
+  toFinancialExportRows,
+} from "@/lib/reportExports";
 
-type WorkspaceProps = { active: string; onBack: () => void; onCreateRequest: () => void; isAdmin?: boolean };
+type WorkspaceProps = {
+  active: string;
+  onBack: () => void;
+  onCreateRequest: () => void;
+  isAdmin?: boolean;
+};
 
-const titles: Record<string, string> = { requests: "طلبات الصرف", calendar: "تقويم المدفوعات", entities: "الجهات والبيانات", reports: "التقارير والطباعة", audit: "سجل التدقيق", settings: "الإعدادات", users: "المستخدمون والصلاحيات" }; const currencyPresets = [{ code: "USD", nameAr: "دولار أمريكي", nameEn: "US Dollar", symbol: "$" }, { code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", symbol: "ر.س" }, { code: "EUR", nameAr: "يورو", nameEn: "Euro", symbol: "€" }, { code: "AED", nameAr: "درهم إماراتي", nameEn: "UAE Dirham", symbol: "د.إ" }];
-const statusPresentation: Record<string, { label: string; badge: string; Icon: LucideIcon }> = { draft: { label: "مسودة", badge: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200", Icon: CircleDashed }, review: { label: "قيد المراجعة", badge: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200", Icon: Clock3 }, approved: { label: "معتمد", badge: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200", Icon: CheckCircle2 }, executed: { label: "منفذ", badge: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200", Icon: CheckCircle2 }, rejected: { label: "مرفوض", badge: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200", Icon: CircleX } };
+const titles: Record<string, string> = {
+  requests: "طلبات الصرف",
+  calendar: "تقويم المدفوعات",
+  entities: "الجهات والبيانات",
+  reports: "التقارير والطباعة",
+  audit: "سجل التدقيق",
+  settings: "الإعدادات",
+  users: "المستخدمون والصلاحيات",
+};
+const currencyPresets = [
+  { code: "USD", nameAr: "دولار أمريكي", nameEn: "US Dollar", symbol: "$" },
+  { code: "SAR", nameAr: "ريال سعودي", nameEn: "Saudi Riyal", symbol: "ر.س" },
+  { code: "EUR", nameAr: "يورو", nameEn: "Euro", symbol: "€" },
+  { code: "AED", nameAr: "درهم إماراتي", nameEn: "UAE Dirham", symbol: "د.إ" },
+];
+const statusPresentation: Record<
+  string,
+  { label: string; badge: string; Icon: LucideIcon }
+> = {
+  draft: {
+    label: "مسودة",
+    badge:
+      "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200",
+    Icon: CircleDashed,
+  },
+  review: {
+    label: "قيد المراجعة",
+    badge:
+      "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+    Icon: Clock3,
+  },
+  approved: {
+    label: "معتمد",
+    badge:
+      "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200",
+    Icon: CheckCircle2,
+  },
+  executed: {
+    label: "منفذ",
+    badge:
+      "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200",
+    Icon: CheckCircle2,
+  },
+  rejected: {
+    label: "مرفوض",
+    badge:
+      "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200",
+    Icon: CircleX,
+  },
+};
 
-export default function Workspace({ active, onBack, onCreateRequest, isAdmin = false }: WorkspaceProps) {
+type PendingRequestAction = {
+  label: string;
+  status: "draft" | "review" | "approved" | "executed" | "rejected";
+};
+
+export function getPendingRequestAction(
+  row: Pick<RequestRecord, "status" | "approvalStages" | "reviewerConfirmed">,
+  operationalRoles: string[],
+  isPlatformAdmin: boolean
+): PendingRequestAction | undefined {
+  const stages = new Set(
+    row.approvalStages ?? ["accountant", "reviewer", "cfo", "gm", "auditor"]
+  );
+  const hasRole = (role: string) =>
+    isPlatformAdmin || operationalRoles.includes(role);
+
+  if (row.status === "draft" && hasRole("accountant")) {
+    return { label: "إرسال للمراجعة", status: "review" };
+  }
+  if (row.status === "review") {
+    if (stages.has("reviewer") && !row.reviewerConfirmed && hasRole("reviewer")) {
+      return { label: "تأكيد المراجعة", status: "review" };
+    }
+    if (
+      (!stages.has("reviewer") || row.reviewerConfirmed) &&
+      stages.has("cfo") &&
+      hasRole("cfo")
+    ) {
+      return { label: "اعتماد المدير المالي", status: "approved" };
+    }
+  }
+  if (row.status === "approved") {
+    if (stages.has("gm") && hasRole("gm")) {
+      return { label: "تسجيل التنفيذ", status: "executed" };
+    }
+    if (!stages.has("gm") && hasRole("cfo")) {
+      return { label: "تسجيل التنفيذ", status: "executed" };
+    }
+  }
+  if (
+    row.status === "rejected" &&
+    (hasRole("accountant") || hasRole("reviewer"))
+  ) {
+    return { label: "إعادة فتح المسودة", status: "draft" };
+  }
+  return undefined;
+}
+
+export default function Workspace({
+  active,
+  onBack,
+  onCreateRequest,
+  isAdmin = false,
+}: WorkspaceProps) {
   const title = titles[active] ?? "مساحة العمل";
   const currentProfile = trpc.auth.currentProfile.useQuery();
   const operationalRoles = currentProfile.data?.operationalRoles ?? [];
   const [name, setName] = useState("");
-  const [entityKind, setEntityKind] = useState<"company" | "beneficiary" | "bank" | "channel">("company");
+  const [entityKind, setEntityKind] = useState<
+    "company" | "beneficiary" | "bank" | "channel"
+  >("company");
   const [editingId, setEditingId] = useState<number | undefined>();
   const [entityMessage, setEntityMessage] = useState("");
-  const [entityForm, setEntityForm] = useState({ name: "", legalName: "", registrationNumber: "", defaultCurrency: "YER", companyId: "", type: "organization" as "individual" | "organization", taxNumber: "", phone: "", address: "", logoUrl: "", email: "", swiftCode: "", country: "", code: "", description: "" });
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [selectedRequestId, setSelectedRequestId] = useState<number>();
-  const [selectedChannelId, setSelectedChannelId] = useState<number | undefined>();
-  const [selectedFiscalYearId, setSelectedFiscalYearId] = useState<number | undefined>();
+  const [entityForm, setEntityForm] = useState({
+    name: "",
+    legalName: "",
+    registrationNumber: "",
+    defaultCurrency: "YER",
+    companyId: "",
+    type: "organization" as "individual" | "organization",
+    taxNumber: "",
+    phone: "",
+    address: "",
+    logoUrl: "",
+    email: "",
+    swiftCode: "",
+    country: "",
+    code: "",
+    description: "",
+  });
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    new Date()
+  );
+  const [selectedChannelId, setSelectedChannelId] = useState<
+    number | undefined
+  >();
+  const [selectedFiscalYearId, setSelectedFiscalYearId] = useState<
+    number | undefined
+  >();
   const [calendarMessage, setCalendarMessage] = useState("");
   const [permissionMessage, setPermissionMessage] = useState("");
   const [userSearch, setUserSearch] = useState("");
@@ -38,139 +196,1768 @@ export default function Workspace({ active, onBack, onCreateRequest, isAdmin = f
   const [auditAction, setAuditAction] = useState("");
   const [auditFrom, setAuditFrom] = useState("");
   const [auditTo, setAuditTo] = useState("");
-  const [exchangeRateForm, setExchangeRateForm] = useState({ baseCurrency: "YER", quoteCurrency: "USD", rate: "", effectiveAt: new Date().toISOString().slice(0, 16), source: "إدخال يدوي", approvalNote: "" });
-  const [fiscalYearForm, setFiscalYearForm] = useState({ year: String(new Date().getFullYear()), label: `السنة المالية ${new Date().getFullYear()}`, startsOn: `${new Date().getFullYear()}-01-01`, endsOn: `${new Date().getFullYear()}-12-31`, isCurrent: true, prefix: "TRZ", padding: "5" });
-  const [currencyForm, setCurrencyForm] = useState({ code: "", nameAr: "", nameEn: "", symbol: "", decimals: "2" });
+  const [exchangeRateForm, setExchangeRateForm] = useState({
+    baseCurrency: "YER",
+    quoteCurrency: "USD",
+    rate: "",
+    effectiveAt: new Date().toISOString().slice(0, 16),
+    source: "إدخال يدوي",
+    approvalNote: "",
+  });
+  const [fiscalYearForm, setFiscalYearForm] = useState({
+    year: String(new Date().getFullYear()),
+    label: `السنة المالية ${new Date().getFullYear()}`,
+    startsOn: `${new Date().getFullYear()}-01-01`,
+    endsOn: `${new Date().getFullYear()}-12-31`,
+    isCurrent: true,
+    prefix: "TRZ",
+    padding: "5",
+  });
+  const [currencyForm, setCurrencyForm] = useState({
+    code: "",
+    nameAr: "",
+    nameEn: "",
+    symbol: "",
+    decimals: "2",
+  });
   const [activeCompanyId, setActiveCompanyId] = useState("all");
-  const companies = trpc.entities.companies.list.useQuery(undefined, { enabled: active === "entities" || active === "requests" });
-  const beneficiaries = trpc.entities.beneficiaries.list.useQuery(undefined, { enabled: active === "entities" || active === "requests" });
-  const banks = trpc.entities.banks.list.useQuery(undefined, { enabled: active === "entities" });
-  const channels = trpc.entities.channels.list.useQuery(undefined, { enabled: active === "entities" || active === "requests" });
-  const requests = trpc.requests.list.useQuery(undefined, { enabled: active === "requests" || active === "reports" });
-  const unified = trpc.dashboard.unified.useQuery({ baseCurrency: "YER" }, { enabled: active === "settings" });
-  const currencies = trpc.settings.currencies.useQuery(undefined, { enabled: active === "requests" || active === "reports" || active === "settings" });
-  const calendar = trpc.calendar.list.useQuery(undefined, { enabled: active === "calendar" });
-  const audit = trpc.audit.list.useQuery({ action: auditAction || undefined, from: auditFrom ? new Date(`${auditFrom}T00:00:00Z`) : undefined, to: auditTo ? new Date(`${auditTo}T23:59:59Z`) : undefined }, { enabled: active === "audit" });
-  const filteredAuditRows = (audit.data ?? []).filter((row) => { const query = auditSearch.trim().toLowerCase(); return !query || [row.action, row.entityType, row.entityId ?? ""].some((value) => value.toLowerCase().includes(query)); });
-  const systemUsers = trpc.users.list.useQuery(undefined, { enabled: active === "users" && isAdmin });
-  const permissions = trpc.permissions.list.useQuery(undefined, { enabled: active === "users" });
-  const updateUserRole = trpc.users.updateRole.useMutation({ onSuccess: () => void systemUsers.refetch() });
-  const assignOperationalRole = trpc.users.assignOperationalRole.useMutation({ onSuccess: () => { setPermissionMessage("تم تعيين الدور التشغيلي بنجاح."); void systemUsers.refetch(); }, onError: (error) => setPermissionMessage(`تعذر تعيين الدور التشغيلي: ${error.message}`) });
-  const updatePermission = trpc.permissions.update.useMutation({ onSuccess: () => { setPermissionMessage("تم حفظ الصلاحية وإعادة تحميل المصفوفة."); void permissions.refetch(); }, onError: (error) => setPermissionMessage(`تعذر حفظ الصلاحية: ${error.message}`) });
-  const createExchangeRate = trpc.settings.createExchangeRate.useMutation({ onSuccess: () => { setPermissionMessage("تم حفظ سعر الصرف بنجاح."); setExchangeRateForm((current) => ({ ...current, rate: "", source: "" })); void exchangeRates.refetch(); }, onError: (error) => setPermissionMessage(`تعذر حفظ سعر الصرف: ${error.message}`) });
-  const createFiscalYear = trpc.settings.createFiscalYear.useMutation({ onSuccess: () => { setPermissionMessage("تمت إضافة السنة المالية وإعداد تسلسلها بنجاح."); void settingsYears.refetch(); setFiscalYearForm((current) => ({ ...current, year: String(Number(current.year) + 1), label: `السنة المالية ${Number(current.year) + 1}`, startsOn: `${Number(current.year) + 1}-01-01`, endsOn: `${Number(current.year) + 1}-12-31`, isCurrent: false })); }, onError: (error) => setPermissionMessage(`تعذر إضافة السنة المالية: ${error.message}`) });
-  const createCurrency = trpc.settings.createCurrency.useMutation({ onSuccess: () => { setPermissionMessage("تمت إضافة العملة بنجاح."); void settingsCurrencies.refetch(); setCurrencyForm({ code: "", nameAr: "", nameEn: "", symbol: "", decimals: "2" }); }, onError: (error) => setPermissionMessage(`تعذر إضافة العملة: ${error.message}`) });
-  const settingsYears = trpc.settings.fiscalYears.useQuery(undefined, { enabled: active === "settings" });
-  const settingsCurrencies = trpc.settings.currencies.useQuery(undefined, { enabled: active === "settings" });
-  const exchangeRates = trpc.settings.exchangeRates.useQuery(undefined, { enabled: active === "settings" });
-  const missingCurrencyFromLink = new URLSearchParams(window.location.search).get("missingCurrency")?.toUpperCase();
-  const exchangeRateHint = unified.data?.missingRates?.length ? { baseCurrency: "YER", missingCurrencies: unified.data.missingRates } : missingCurrencyFromLink && /^[A-Z]{3}$/.test(missingCurrencyFromLink) ? { baseCurrency: "YER", missingCurrencies: [missingCurrencyFromLink] } : undefined;
-  const calendarChannels = trpc.entities.channels.list.useQuery(undefined, { enabled: active === "calendar" });
-  const fiscalYears = trpc.settings.fiscalYears.useQuery(undefined, { enabled: active === "calendar" });
-  const entityLoading = companies.isLoading || beneficiaries.isLoading || banks.isLoading || channels.isLoading;
-  const entityError = companies.error ?? beneficiaries.error ?? banks.error ?? channels.error;
-  const calendarError = calendar.error ?? calendarChannels.error ?? fiscalYears.error;
-  const createCompany = trpc.entities.companies.create.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تمت إضافة الشركة بنجاح."); setName(""); void companies.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ الشركة: ${error.message}`) });
-  const createBank = trpc.entities.banks.create.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تمت إضافة البنك بنجاح."); setName(""); void banks.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ البنك: ${error.message}`) });
-  const createChannel = trpc.entities.channels.create.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تمت إضافة قناة الصرف بنجاح."); setName(""); void channels.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ قناة الصرف: ${error.message}`) });
-  const updateCompany = trpc.entities.companies.update.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تم تعديل الشركة بنجاح."); void companies.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ الشركة: ${error.message}`) });
-  const createBeneficiary = trpc.entities.beneficiaries.create.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تمت إضافة المستفيد بنجاح."); void beneficiaries.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ المستفيد: ${error.message}`) });
-  const updateBeneficiary = trpc.entities.beneficiaries.update.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تم تعديل المستفيد بنجاح."); void beneficiaries.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ المستفيد: ${error.message}`) });
-  const updateBank = trpc.entities.banks.update.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تم تعديل البنك بنجاح."); void banks.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ البنك: ${error.message}`) });
-  const updateChannel = trpc.entities.channels.update.useMutation({ onSuccess: () => { resetEntityForm(); setEntityMessage("تم تعديل قناة الصرف بنجاح."); void channels.refetch(); }, onError: (error) => setEntityMessage(`تعذر حفظ القناة: ${error.message}`) });
-  const removeCompany = trpc.entities.companies.remove.useMutation({ onSuccess: () => { setEntityMessage("تم تعطيل الشركة بنجاح."); void companies.refetch(); }, onError: (error) => setEntityMessage(`تعذر تعطيل الشركة: ${error.message}`) });
-  const removeBeneficiary = trpc.entities.beneficiaries.remove.useMutation({ onSuccess: () => { setEntityMessage("تم تعطيل المستفيد بنجاح."); void beneficiaries.refetch(); }, onError: (error) => setEntityMessage(`تعذر تعطيل المستفيد: ${error.message}`) });
-  const removeBank = trpc.entities.banks.remove.useMutation({ onSuccess: () => { setEntityMessage("تم تعطيل البنك بنجاح."); void banks.refetch(); }, onError: (error) => setEntityMessage(`تعذر تعطيل البنك: ${error.message}`) });
-  const removeChannel = trpc.entities.channels.remove.useMutation({ onSuccess: () => { setEntityMessage("تم تعطيل قناة الصرف بنجاح."); void channels.refetch(); }, onError: (error) => setEntityMessage(`تعذر تعطيل القناة: ${error.message}`) });
-  const convertCalendar = trpc.calendar.convert.useMutation({ onSuccess: ({ referenceNumber }) => { setCalendarMessage(`تم إنشاء الطلب ${referenceNumber} بنجاح`); void calendar.refetch(); }, onError: (error) => setCalendarMessage(error.message) });
-  const resetEntityForm = () => { setEditingId(undefined); setEntityMessage(""); setEntityForm({ name: "", legalName: "", registrationNumber: "", defaultCurrency: "YER", companyId: "", type: "organization", taxNumber: "", phone: "", address: "", logoUrl: "", email: "", swiftCode: "", country: "", code: "", description: "" }); };
-  const startEdit = (kind: "company" | "beneficiary" | "bank" | "channel", item: Record<string, unknown>) => { setEntityKind(kind); setEditingId(Number(item.id)); setEntityMessage(""); setEntityForm((current) => ({ ...current, name: String(item.name ?? ""), legalName: String(item.legalName ?? ""), registrationNumber: String(item.registrationNumber ?? ""), defaultCurrency: String(item.defaultCurrency ?? "YER"), companyId: String(item.companyId ?? ""), type: item.type === "individual" ? "individual" : "organization", taxNumber: String(item.taxNumber ?? ""), phone: String(item.phone ?? ""), address: String(item.address ?? ""), logoUrl: String(item.logoUrl ?? ""), email: String(item.email ?? ""), swiftCode: String(item.swiftCode ?? ""), country: String(item.country ?? ""), code: String(item.code ?? ""), description: String(item.description ?? "") })); };
-  const submitEntity = () => { const name = entityForm.name.trim(); const nameLimit = entityKind === "company" || entityKind === "beneficiary" ? 180 : entityKind === "bank" ? 160 : 120; if (name.length < 2) { setEntityMessage("أدخل اسماً لا يقل عن حرفين."); return; } if (name.length > nameLimit) { setEntityMessage(`اسم الكيان يتجاوز الحد المسموح (${nameLimit} حرفاً).`); return; } const limits: Record<string, number> = entityKind === "company" ? { legalName: 220, registrationNumber: 80 } : entityKind === "beneficiary" ? { taxNumber: 80, phone: 40, email: 320 } : entityKind === "bank" ? { swiftCode: 40, country: 80 } : { code: 32, description: 500 }; for (const [field, limit] of Object.entries(limits)) { if (entityForm[field as keyof EntityFormState].trim().length > limit) { setEntityMessage(`الحقل ${field} يتجاوز الحد المسموح (${limit} حرفاً).`); return; } } if (entityKind === "company" && !/^[A-Z]{3}$/.test(entityForm.defaultCurrency.trim().toUpperCase())) { setEntityMessage("أدخل رمز عملة من ثلاثة أحرف إنجليزية، مثل SAR."); return; } if (entityKind === "channel" && entityForm.code.trim().length < 2) { setEntityMessage("أدخل رمز قناة من حرفين إلى 32 حرفاً."); return; } if (entityKind === "beneficiary" && entityForm.email && !/^\S+@\S+\.\S+$/.test(entityForm.email)) { setEntityMessage("أدخل بريداً إلكترونياً صحيحاً."); return; } setEntityMessage(""); if (entityKind === "company") { const input = { name, legalName: entityForm.legalName.trim() || undefined, registrationNumber: entityForm.registrationNumber.trim() || undefined, taxNumber: entityForm.taxNumber.trim() || undefined, phone: entityForm.phone.trim() || undefined, address: entityForm.address.trim() || undefined, logoUrl: entityForm.logoUrl.trim() || undefined, defaultCurrency: entityForm.defaultCurrency.trim().toUpperCase() }; if (editingId) updateCompany.mutate({ id: editingId, ...input }); else createCompany.mutate(input); } else if (entityKind === "beneficiary") { if (!entityForm.companyId) { setEntityMessage("اختر الشركة المرتبط بها المستفيد."); return; } if (editingId) updateBeneficiary.mutate({ id: editingId, companyId: Number(entityForm.companyId), name: entityForm.name.trim(), type: entityForm.type, taxNumber: entityForm.taxNumber.trim() || undefined, phone: entityForm.phone.trim() || undefined, email: entityForm.email.trim() || undefined }); else createBeneficiary.mutate({ companyId: Number(entityForm.companyId), name: entityForm.name.trim(), type: entityForm.type, taxNumber: entityForm.taxNumber.trim() || undefined, phone: entityForm.phone.trim() || undefined, email: entityForm.email.trim() || undefined }); } else if (entityKind === "bank") { const input = { name: entityForm.name.trim(), swiftCode: entityForm.swiftCode.trim() || undefined, country: entityForm.country.trim() || undefined }; if (editingId) updateBank.mutate({ id: editingId, ...input }); else createBank.mutate(input); } else { const input = { name: entityForm.name.trim(), code: entityForm.code.trim().toUpperCase(), description: entityForm.description.trim() || undefined }; if (editingId) updateChannel.mutate({ id: editingId, ...input }); else createChannel.mutate(input); } };
+  const companies = trpc.entities.companies.list.useQuery(undefined, {
+    enabled: active === "entities" || active === "requests",
+  });
+  const beneficiaries = trpc.entities.beneficiaries.list.useQuery(undefined, {
+    enabled: active === "entities" || active === "requests",
+  });
+  const banks = trpc.entities.banks.list.useQuery(undefined, {
+    enabled: active === "entities",
+  });
+  const channels = trpc.entities.channels.list.useQuery(undefined, {
+    enabled: active === "entities" || active === "requests",
+  });
+  const requests = trpc.requests.list.useQuery(undefined, {
+    enabled: active === "requests" || active === "reports",
+  });
+  const unified = trpc.dashboard.unified.useQuery(
+    { baseCurrency: "YER" },
+    { enabled: active === "settings" }
+  );
+  const currencies = trpc.settings.currencies.useQuery(undefined, {
+    enabled:
+      active === "requests" || active === "reports" || active === "settings",
+  });
+  const calendar = trpc.calendar.list.useQuery(undefined, {
+    enabled: active === "calendar",
+  });
+  const audit = trpc.audit.list.useQuery(
+    {
+      action: auditAction || undefined,
+      from: auditFrom ? new Date(`${auditFrom}T00:00:00Z`) : undefined,
+      to: auditTo ? new Date(`${auditTo}T23:59:59Z`) : undefined,
+    },
+    { enabled: active === "audit" }
+  );
+  const filteredAuditRows = (audit.data ?? []).filter(row => {
+    const query = auditSearch.trim().toLowerCase();
+    return (
+      !query ||
+      [row.action, row.entityType, row.entityId ?? ""].some(value =>
+        value.toLowerCase().includes(query)
+      )
+    );
+  });
+  const systemUsers = trpc.users.list.useQuery(undefined, {
+    enabled: active === "users" && isAdmin,
+  });
+  const permissions = trpc.permissions.list.useQuery(undefined, {
+    enabled: active === "users",
+  });
+  const updateUserRole = trpc.users.updateRole.useMutation({
+    onSuccess: () => void systemUsers.refetch(),
+  });
+  const assignOperationalRole = trpc.users.assignOperationalRole.useMutation({
+    onSuccess: () => {
+      setPermissionMessage("تم تعيين الدور التشغيلي بنجاح.");
+      void systemUsers.refetch();
+    },
+    onError: error =>
+      setPermissionMessage(`تعذر تعيين الدور التشغيلي: ${error.message}`),
+  });
+  const updatePermission = trpc.permissions.update.useMutation({
+    onSuccess: () => {
+      setPermissionMessage("تم حفظ الصلاحية وإعادة تحميل المصفوفة.");
+      void permissions.refetch();
+    },
+    onError: error =>
+      setPermissionMessage(`تعذر حفظ الصلاحية: ${error.message}`),
+  });
+  const createExchangeRate = trpc.settings.createExchangeRate.useMutation({
+    onSuccess: () => {
+      setPermissionMessage("تم حفظ سعر الصرف بنجاح.");
+      setExchangeRateForm(current => ({ ...current, rate: "", source: "" }));
+      void exchangeRates.refetch();
+    },
+    onError: error =>
+      setPermissionMessage(`تعذر حفظ سعر الصرف: ${error.message}`),
+  });
+  const createFiscalYear = trpc.settings.createFiscalYear.useMutation({
+    onSuccess: () => {
+      setPermissionMessage("تمت إضافة السنة المالية وإعداد تسلسلها بنجاح.");
+      void settingsYears.refetch();
+      setFiscalYearForm(current => ({
+        ...current,
+        year: String(Number(current.year) + 1),
+        label: `السنة المالية ${Number(current.year) + 1}`,
+        startsOn: `${Number(current.year) + 1}-01-01`,
+        endsOn: `${Number(current.year) + 1}-12-31`,
+        isCurrent: false,
+      }));
+    },
+    onError: error =>
+      setPermissionMessage(`تعذر إضافة السنة المالية: ${error.message}`),
+  });
+  const createCurrency = trpc.settings.createCurrency.useMutation({
+    onSuccess: () => {
+      setPermissionMessage("تمت إضافة العملة بنجاح.");
+      void settingsCurrencies.refetch();
+      setCurrencyForm({
+        code: "",
+        nameAr: "",
+        nameEn: "",
+        symbol: "",
+        decimals: "2",
+      });
+    },
+    onError: error =>
+      setPermissionMessage(`تعذر إضافة العملة: ${error.message}`),
+  });
+  const settingsYears = trpc.settings.fiscalYears.useQuery(undefined, {
+    enabled: active === "settings",
+  });
+  const settingsCurrencies = trpc.settings.currencies.useQuery(undefined, {
+    enabled: active === "settings",
+  });
+  const exchangeRates = trpc.settings.exchangeRates.useQuery(undefined, {
+    enabled: active === "settings",
+  });
+  const missingCurrencyFromLink = new URLSearchParams(window.location.search)
+    .get("missingCurrency")
+    ?.toUpperCase();
+  const exchangeRateHint = unified.data?.missingRates?.length
+    ? { baseCurrency: "YER", missingCurrencies: unified.data.missingRates }
+    : missingCurrencyFromLink && /^[A-Z]{3}$/.test(missingCurrencyFromLink)
+      ? { baseCurrency: "YER", missingCurrencies: [missingCurrencyFromLink] }
+      : undefined;
+  const calendarChannels = trpc.entities.channels.list.useQuery(undefined, {
+    enabled: active === "calendar",
+  });
+  const fiscalYears = trpc.settings.fiscalYears.useQuery(undefined, {
+    enabled: active === "calendar",
+  });
+  const entityLoading =
+    companies.isLoading ||
+    beneficiaries.isLoading ||
+    banks.isLoading ||
+    channels.isLoading;
+  const entityError =
+    companies.error ?? beneficiaries.error ?? banks.error ?? channels.error;
+  const calendarError =
+    calendar.error ?? calendarChannels.error ?? fiscalYears.error;
+  const createCompany = trpc.entities.companies.create.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تمت إضافة الشركة بنجاح.");
+      setName("");
+      void companies.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ الشركة: ${error.message}`),
+  });
+  const createBank = trpc.entities.banks.create.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تمت إضافة البنك بنجاح.");
+      setName("");
+      void banks.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ البنك: ${error.message}`),
+  });
+  const createChannel = trpc.entities.channels.create.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تمت إضافة قناة الصرف بنجاح.");
+      setName("");
+      void channels.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ قناة الصرف: ${error.message}`),
+  });
+  const updateCompany = trpc.entities.companies.update.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تم تعديل الشركة بنجاح.");
+      void companies.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ الشركة: ${error.message}`),
+  });
+  const createBeneficiary = trpc.entities.beneficiaries.create.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تمت إضافة المستفيد بنجاح.");
+      void beneficiaries.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ المستفيد: ${error.message}`),
+  });
+  const updateBeneficiary = trpc.entities.beneficiaries.update.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تم تعديل المستفيد بنجاح.");
+      void beneficiaries.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ المستفيد: ${error.message}`),
+  });
+  const updateBank = trpc.entities.banks.update.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تم تعديل البنك بنجاح.");
+      void banks.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ البنك: ${error.message}`),
+  });
+  const updateChannel = trpc.entities.channels.update.useMutation({
+    onSuccess: () => {
+      resetEntityForm();
+      setEntityMessage("تم تعديل قناة الصرف بنجاح.");
+      void channels.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر حفظ القناة: ${error.message}`),
+  });
+  const removeCompany = trpc.entities.companies.remove.useMutation({
+    onSuccess: () => {
+      setEntityMessage("تم تعطيل الشركة بنجاح.");
+      void companies.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر تعطيل الشركة: ${error.message}`),
+  });
+  const removeBeneficiary = trpc.entities.beneficiaries.remove.useMutation({
+    onSuccess: () => {
+      setEntityMessage("تم تعطيل المستفيد بنجاح.");
+      void beneficiaries.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر تعطيل المستفيد: ${error.message}`),
+  });
+  const removeBank = trpc.entities.banks.remove.useMutation({
+    onSuccess: () => {
+      setEntityMessage("تم تعطيل البنك بنجاح.");
+      void banks.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر تعطيل البنك: ${error.message}`),
+  });
+  const removeChannel = trpc.entities.channels.remove.useMutation({
+    onSuccess: () => {
+      setEntityMessage("تم تعطيل قناة الصرف بنجاح.");
+      void channels.refetch();
+    },
+    onError: error => setEntityMessage(`تعذر تعطيل القناة: ${error.message}`),
+  });
+  const convertCalendar = trpc.calendar.convert.useMutation({
+    onSuccess: ({ referenceNumber }) => {
+      setCalendarMessage(`تم إنشاء الطلب ${referenceNumber} بنجاح`);
+      void calendar.refetch();
+    },
+    onError: error => setCalendarMessage(error.message),
+  });
+  const resetEntityForm = () => {
+    setEditingId(undefined);
+    setEntityMessage("");
+    setEntityForm({
+      name: "",
+      legalName: "",
+      registrationNumber: "",
+      defaultCurrency: "YER",
+      companyId: "",
+      type: "organization",
+      taxNumber: "",
+      phone: "",
+      address: "",
+      logoUrl: "",
+      email: "",
+      swiftCode: "",
+      country: "",
+      code: "",
+      description: "",
+    });
+  };
+  const startEdit = (
+    kind: "company" | "beneficiary" | "bank" | "channel",
+    item: Record<string, unknown>
+  ) => {
+    setEntityKind(kind);
+    setEditingId(Number(item.id));
+    setEntityMessage("");
+    setEntityForm(current => ({
+      ...current,
+      name: String(item.name ?? ""),
+      legalName: String(item.legalName ?? ""),
+      registrationNumber: String(item.registrationNumber ?? ""),
+      defaultCurrency: String(item.defaultCurrency ?? "YER"),
+      companyId: String(item.companyId ?? ""),
+      type: item.type === "individual" ? "individual" : "organization",
+      taxNumber: String(item.taxNumber ?? ""),
+      phone: String(item.phone ?? ""),
+      address: String(item.address ?? ""),
+      logoUrl: String(item.logoUrl ?? ""),
+      email: String(item.email ?? ""),
+      swiftCode: String(item.swiftCode ?? ""),
+      country: String(item.country ?? ""),
+      code: String(item.code ?? ""),
+      description: String(item.description ?? ""),
+    }));
+  };
+  const submitEntity = () => {
+    const name = entityForm.name.trim();
+    const nameLimit =
+      entityKind === "company" || entityKind === "beneficiary"
+        ? 180
+        : entityKind === "bank"
+          ? 160
+          : 120;
+    if (name.length < 2) {
+      setEntityMessage("أدخل اسماً لا يقل عن حرفين.");
+      return;
+    }
+    if (name.length > nameLimit) {
+      setEntityMessage(`اسم الكيان يتجاوز الحد المسموح (${nameLimit} حرفاً).`);
+      return;
+    }
+    const limits: Record<string, number> =
+      entityKind === "company"
+        ? { legalName: 220, registrationNumber: 80 }
+        : entityKind === "beneficiary"
+          ? { taxNumber: 80, phone: 40, email: 320 }
+          : entityKind === "bank"
+            ? { swiftCode: 40, country: 80 }
+            : { code: 32, description: 500 };
+    for (const [field, limit] of Object.entries(limits)) {
+      if (entityForm[field as keyof EntityFormState].trim().length > limit) {
+        setEntityMessage(
+          `الحقل ${field} يتجاوز الحد المسموح (${limit} حرفاً).`
+        );
+        return;
+      }
+    }
+    if (
+      entityKind === "company" &&
+      !/^[A-Z]{3}$/.test(entityForm.defaultCurrency.trim().toUpperCase())
+    ) {
+      setEntityMessage("أدخل رمز عملة من ثلاثة أحرف إنجليزية، مثل SAR.");
+      return;
+    }
+    if (entityKind === "channel" && entityForm.code.trim().length < 2) {
+      setEntityMessage("أدخل رمز قناة من حرفين إلى 32 حرفاً.");
+      return;
+    }
+    if (
+      entityKind === "beneficiary" &&
+      entityForm.email &&
+      !/^\S+@\S+\.\S+$/.test(entityForm.email)
+    ) {
+      setEntityMessage("أدخل بريداً إلكترونياً صحيحاً.");
+      return;
+    }
+    setEntityMessage("");
+    if (entityKind === "company") {
+      const input = {
+        name,
+        legalName: entityForm.legalName.trim() || undefined,
+        registrationNumber: entityForm.registrationNumber.trim() || undefined,
+        taxNumber: entityForm.taxNumber.trim() || undefined,
+        phone: entityForm.phone.trim() || undefined,
+        address: entityForm.address.trim() || undefined,
+        logoUrl: entityForm.logoUrl.trim() || undefined,
+        defaultCurrency: entityForm.defaultCurrency.trim().toUpperCase(),
+      };
+      if (editingId) updateCompany.mutate({ id: editingId, ...input });
+      else createCompany.mutate(input);
+    } else if (entityKind === "beneficiary") {
+      if (!entityForm.companyId) {
+        setEntityMessage("اختر الشركة المرتبط بها المستفيد.");
+        return;
+      }
+      if (editingId)
+        updateBeneficiary.mutate({
+          id: editingId,
+          companyId: Number(entityForm.companyId),
+          name: entityForm.name.trim(),
+          type: entityForm.type,
+          taxNumber: entityForm.taxNumber.trim() || undefined,
+          phone: entityForm.phone.trim() || undefined,
+          email: entityForm.email.trim() || undefined,
+        });
+      else
+        createBeneficiary.mutate({
+          companyId: Number(entityForm.companyId),
+          name: entityForm.name.trim(),
+          type: entityForm.type,
+          taxNumber: entityForm.taxNumber.trim() || undefined,
+          phone: entityForm.phone.trim() || undefined,
+          email: entityForm.email.trim() || undefined,
+        });
+    } else if (entityKind === "bank") {
+      const input = {
+        name: entityForm.name.trim(),
+        swiftCode: entityForm.swiftCode.trim() || undefined,
+        country: entityForm.country.trim() || undefined,
+      };
+      if (editingId) updateBank.mutate({ id: editingId, ...input });
+      else createBank.mutate(input);
+    } else {
+      const input = {
+        name: entityForm.name.trim(),
+        code: entityForm.code.trim().toUpperCase(),
+        description: entityForm.description.trim() || undefined,
+      };
+      if (editingId) updateChannel.mutate({ id: editingId, ...input });
+      else createChannel.mutate(input);
+    }
+  };
 
-  return <section className="mx-auto max-w-[1500px] p-5 sm:p-8">
-    <button onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-primary"><ArrowRight size={16}/> العودة للوحة الرئيسية</button>
-    <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold text-primary">مساحة العمل</p><h2 className="mt-1 font-display text-3xl font-extrabold">{title}</h2><p className="mt-2 text-sm text-muted-foreground">إدارة منظمة ومراجعة واضحة لكل عناصر الخزينة.</p></div><div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-xs font-semibold"><span className="text-muted-foreground">الشركة النشطة</span><select value={activeCompanyId} onChange={(event) => setActiveCompanyId(event.target.value)} className="bg-transparent text-sm font-bold outline-none" aria-label="الشركة النشطة العامة"><option value="all">كل الشركات</option>{(companies.data ?? []).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>{active === "requests" && (isAdmin || operationalRoles.includes("accountant")) && <button onClick={onCreateRequest} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><Plus size={17}/> إنشاء طلب صرف</button>}{active === "reports" && <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"><Printer size={17}/> معاينة الطباعة</button>}</div></div>
-    {active === "entities" && (entityLoading ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">جارٍ تحميل بيانات الجهات…</div> : entityError ? <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center"><p className="text-sm font-bold text-destructive">تعذر تحميل بيانات الجهات</p><p className="mt-2 text-sm text-destructive/90">{entityError.message}</p><button onClick={() => { void companies.refetch(); void beneficiaries.refetch(); void banks.refetch(); void channels.refetch(); }} className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">إعادة المحاولة</button></div> : <div className="grid gap-5 lg:grid-cols-2"><EntityList title="الشركات" items={companies.data ?? []} onAdd={() => { resetEntityForm(); setEntityKind("company"); }} onEdit={(item) => startEdit("company", item)} onRemove={(id) => removeCompany.mutate({ id })}/><EntityList title="المستفيدون" items={beneficiaries.data ?? []} onAdd={() => { resetEntityForm(); setEntityKind("beneficiary"); }} onEdit={(item) => startEdit("beneficiary", item)} onRemove={(id) => removeBeneficiary.mutate({ id })}/><EntityList title="البنوك" items={banks.data ?? []} onAdd={() => { resetEntityForm(); setEntityKind("bank"); }} onEdit={(item) => startEdit("bank", item)} onRemove={(id) => removeBank.mutate({ id })}/><EntityList title="قنوات الصرف" items={channels.data ?? []} onAdd={() => { resetEntityForm(); setEntityKind("channel"); }} onEdit={(item) => startEdit("channel", item)} onRemove={(id) => removeChannel.mutate({ id })}/><EntityForm kind={entityKind} editingId={editingId} form={entityForm} companies={companies.data ?? []} message={entityMessage} onKindChange={(kind) => { resetEntityForm(); setEntityKind(kind); }} onChange={(field, value) => setEntityForm((current) => ({ ...current, [field]: value }))} onSubmit={submitEntity} onCancel={resetEntityForm}/></div>)}
-    {active === "requests" && (requests.isLoading ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">جارٍ تحميل طلبات الصرف…</div> : requests.error ? <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center"><p className="text-sm font-bold text-destructive">تعذر تحميل طلبات الصرف</p><p className="mt-2 text-sm text-destructive/90">{requests.error.message}</p><button onClick={() => void requests.refetch()} className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">إعادة المحاولة</button></div> : <><RequestWorkflow rows={requests.data ?? []} currencies={currencies.data ?? []} companies={companies.data ?? []} beneficiaries={beneficiaries.data ?? []} channels={channels.data ?? []} operationalRoles={operationalRoles} isAdmin={isAdmin} initialCompanyId={activeCompanyId} onCreateRequest={onCreateRequest} onOpenRequest={setSelectedRequestId}/><RequestDetailPanel rows={requests.data ?? []} currencies={currencies.data ?? []} selectedRequestId={selectedRequestId} onSelectedRequestIdChange={setSelectedRequestId}/></>)} 
-    {active === "calendar" && (calendar.isLoading || calendarChannels.isLoading || fiscalYears.isLoading ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">جارٍ تحميل تقويم المدفوعات…</div> : calendarError ? <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center"><p className="text-sm font-bold text-destructive">تعذر تحميل تقويم المدفوعات</p><p className="mt-2 text-sm text-destructive/90">{calendarError.message}</p><button onClick={() => { void calendar.refetch(); void calendarChannels.refetch(); void fiscalYears.refetch(); }} className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">إعادة المحاولة</button></div> : <div className="grid gap-5 lg:grid-cols-[360px_1fr]"><div className="space-y-4"><div className="rounded-2xl border bg-card p-4"><Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} className="mx-auto"/></div><div className="rounded-2xl border bg-card p-5"><p className="text-sm font-bold">إعدادات التحويل</p><label className="mt-4 block text-xs font-semibold">قناة الصرف</label><select value={selectedChannelId ?? ""} onChange={(e) => setSelectedChannelId(e.target.value ? Number(e.target.value) : undefined)} className="mt-2 w-full rounded-xl border bg-background px-3 py-3 text-sm"><option value="">اختر القناة</option>{(calendarChannels.data ?? []).map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select><label className="mt-4 block text-xs font-semibold">السنة المالية</label><select value={selectedFiscalYearId ?? ""} onChange={(e) => setSelectedFiscalYearId(e.target.value ? Number(e.target.value) : undefined)} className="mt-2 w-full rounded-xl border bg-background px-3 py-3 text-sm"><option value="">اختر السنة</option>{(fiscalYears.data ?? []).map((year) => <option key={year.id} value={year.id}>{year.year}</option>)}</select>{!calendarChannels.data?.length || !fiscalYears.data?.length ? <p className="mt-3 text-xs leading-6 text-amber-700">أضف قناة صرف وسنة مالية قبل تحويل الموعد.</p> : null}{calendarMessage ? <p className="mt-3 text-xs leading-6 text-primary">{calendarMessage}</p> : null}</div></div><div className="overflow-hidden rounded-2xl border bg-card"><div className="border-b p-5"><h3 className="font-display text-lg font-extrabold">استحقاقات {selectedDate ? selectedDate.toLocaleDateString("ar-SA") : "القادمة"}</h3></div><div className="divide-y">{(calendar.data ?? []).filter((r) => !selectedDate || new Date(r.dueDate).toDateString() === selectedDate.toDateString()).map((r) => <div key={r.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold">{r.title}</p><p className="mt-1 text-xs text-muted-foreground">{r.amount} {r.currency} · {new Date(r.dueDate).toLocaleDateString("ar-SA")}</p></div>{r.convertedRequestId ? <span className="text-xs font-bold text-primary">تم التحويل</span> : <button disabled={convertCalendar.isPending || !selectedChannelId || !selectedFiscalYearId} onClick={() => { if (selectedChannelId && selectedFiscalYearId) convertCalendar.mutate({ entryId: r.id, channelId: selectedChannelId, fiscalYearId: selectedFiscalYearId }); }} className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50">{convertCalendar.isPending ? "جارٍ التحويل…" : "تحويل إلى طلب صرف"}</button>}</div>)}{!(calendar.data ?? []).length && <p className="p-10 text-center text-sm text-muted-foreground">لا توجد مواعيد مدفوعات مسجلة.</p>}</div></div></div>)}
-    {active === "audit" && <AuditTrailPanel rows={audit.data ?? []} isLoading={audit.isLoading} error={audit.error} onRetry={() => void audit.refetch()} action={auditAction} from={auditFrom} to={auditTo} onActionChange={setAuditAction} onFromChange={setAuditFrom} onToChange={setAuditTo} />} 
-    {active === "reports" && <><FinancialReportsPanel/>{requests.isLoading ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">جارٍ تحميل بيانات التقارير…</div> : requests.error ? <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center"><h3 className="font-display text-lg font-extrabold text-destructive">تعذر تحميل بيانات الطباعة</h3><p className="mt-2 text-sm text-destructive/90">{requests.error.message}</p><button onClick={() => void requests.refetch()} className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">إعادة المحاولة</button></div> : <PrintCenter rows={requests.data ?? []}/>}</>}
-    {active === "settings" && <div className="grid gap-5 lg:grid-cols-2"><div className="rounded-2xl border bg-card p-6"><div className="flex items-center gap-3"><ShieldCheck className="text-primary" size={28}/><div><h3 className="font-display text-xl font-extrabold">السنوات المالية</h3><p className="mt-1 text-xs text-muted-foreground">السنوات والتسلسلات المتاحة للنظام.</p><div className="mt-5 rounded-xl bg-secondary/60 p-4"><div className="grid gap-3 sm:grid-cols-2"><input value={fiscalYearForm.year} onChange={(event) => setFiscalYearForm((current) => ({ ...current, year: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" inputMode="numeric" placeholder="السنة، مثال 2026" aria-label="السنة المالية"/><input value={fiscalYearForm.label} onChange={(event) => setFiscalYearForm((current) => ({ ...current, label: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="اسم السنة المالية" aria-label="اسم السنة المالية"/><input type="date" value={fiscalYearForm.startsOn} onChange={(event) => setFiscalYearForm((current) => ({ ...current, startsOn: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" aria-label="بداية السنة المالية"/><input type="date" value={fiscalYearForm.endsOn} onChange={(event) => setFiscalYearForm((current) => ({ ...current, endsOn: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" aria-label="نهاية السنة المالية"/><input value={fiscalYearForm.prefix} onChange={(event) => setFiscalYearForm((current) => ({ ...current, prefix: event.target.value.toUpperCase() }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="بادئة الرقم، TRZ" aria-label="بادئة الرقم المرجعي"/><input type="number" min="1" max="12" value={fiscalYearForm.padding} onChange={(event) => setFiscalYearForm((current) => ({ ...current, padding: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="عدد الخانات" aria-label="عدد خانات الرقم المرجعي"/></div><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={fiscalYearForm.isCurrent} onChange={(event) => setFiscalYearForm((current) => ({ ...current, isCurrent: event.target.checked }))}/> تعيين كسنة مالية حالية</label><button disabled={createFiscalYear.isPending || !fiscalYearForm.year || !fiscalYearForm.startsOn || !fiscalYearForm.endsOn} onClick={() => createFiscalYear.mutate({ year: Number(fiscalYearForm.year), label: fiscalYearForm.label.trim() || `السنة المالية ${fiscalYearForm.year}`, startsOn: new Date(`${fiscalYearForm.startsOn}T00:00:00Z`), endsOn: new Date(`${fiscalYearForm.endsOn}T23:59:59Z`), isCurrent: fiscalYearForm.isCurrent, prefix: fiscalYearForm.prefix.trim().toUpperCase() || "TRZ", padding: Number(fiscalYearForm.padding) || 5 })} className="mt-3 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{createFiscalYear.isPending ? "جارٍ الحفظ…" : "إضافة السنة المالية"}</button></div></div></div><div className="mt-5 space-y-2">{settingsYears.error ? <p className="text-sm text-destructive">تعذر تحميل السنوات المالية: {settingsYears.error.message}</p> : settingsYears.isLoading ? <p className="text-sm text-muted-foreground">جارٍ التحميل…</p> : (settingsYears.data ?? []).length ? (settingsYears.data ?? []).map((year) => <div key={year.id} className="flex items-center justify-between rounded-xl bg-secondary px-4 py-3 text-sm"><span>السنة المالية {year.year}</span><span className="text-xs font-semibold text-primary">{year.isCurrent ? "السنة الحالية" : "متاحة"}</span></div>) : <p className="text-sm text-muted-foreground">لا توجد سنوات مالية مهيأة بعد.</p>}</div></div><div className="rounded-2xl border bg-card p-6"><h3 className="font-display text-xl font-extrabold">العملات النشطة</h3><p className="mt-1 text-xs text-muted-foreground">العملات المسموح استخدامها في طلبات الصرف. الريال اليمني YER هو الافتراضي.</p><div className="mt-4 flex flex-wrap items-center gap-2"><span className="text-xs font-semibold text-muted-foreground">اختيار سريع:</span>{currencyPresets.map((preset) => <button key={preset.code} type="button" onClick={() => setCurrencyForm((current) => ({ ...current, ...preset }))} className="rounded-full border px-3 py-1.5 text-xs font-bold transition-colors hover:bg-secondary">{preset.code} — {preset.nameAr}</button>)}</div><div className="mt-5 rounded-xl bg-secondary/60 p-4"><div className="grid gap-3 sm:grid-cols-2"><input value={currencyForm.code} onChange={(event) => setCurrencyForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} className="rounded-xl border bg-background px-3 py-3 text-sm" maxLength={3} placeholder="الرمز، YER" aria-label="رمز العملة"/><input value={currencyForm.nameAr} onChange={(event) => setCurrencyForm((current) => ({ ...current, nameAr: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="اسم العملة بالعربية" aria-label="اسم العملة بالعربية"/><input value={currencyForm.nameEn} onChange={(event) => setCurrencyForm((current) => ({ ...current, nameEn: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="اسم العملة بالإنجليزية" aria-label="اسم العملة بالإنجليزية"/><input value={currencyForm.symbol} onChange={(event) => setCurrencyForm((current) => ({ ...current, symbol: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="رمز العرض" aria-label="رمز العرض"/><input type="number" min="0" max="6" value={currencyForm.decimals} onChange={(event) => setCurrencyForm((current) => ({ ...current, decimals: event.target.value }))} className="rounded-xl border bg-background px-3 py-3 text-sm" placeholder="المنازل العشرية" aria-label="المنازل العشرية"/></div><button disabled={createCurrency.isPending || currencyForm.code.length !== 3 || !currencyForm.nameAr.trim()} onClick={() => createCurrency.mutate({ code: currencyForm.code, nameAr: currencyForm.nameAr.trim(), nameEn: currencyForm.nameEn.trim() || currencyForm.nameAr.trim(), symbol: currencyForm.symbol.trim() || currencyForm.code, decimals: Number(currencyForm.decimals) || 2 })} className="mt-3 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{createCurrency.isPending ? "جارٍ الحفظ…" : "إضافة العملة"}</button></div><div className="mt-5 flex flex-wrap gap-2">{settingsCurrencies.error ? <p className="text-sm text-destructive">تعذر تحميل العملات: {settingsCurrencies.error.message}</p> : settingsCurrencies.isLoading ? <p className="text-sm text-muted-foreground">جارٍ التحميل…</p> : (settingsCurrencies.data ?? []).length ? (settingsCurrencies.data ?? []).map((currency) => <span key={currency.code} className="rounded-full bg-secondary px-4 py-2 text-sm font-bold text-primary">{currency.code} · {currency.nameAr}</span>) : <p className="text-sm text-muted-foreground">لا توجد عملات نشطة بعد.</p>}</div></div></div>}
-    {active === "settings" && isAdmin && <SequenceSettingsPanel/>}
-    {active === "settings" && <ExchangeRatesPanel hint={exchangeRateHint}/> }
-    {active === "settings" && isAdmin && <ApprovalPoliciesPanel/>}
-    {active === "settings" && <OverdueAlertsCard/>}
-    {active === "users" && <div className="space-y-5"><div className="rounded-2xl border bg-card p-8"><ShieldCheck className="text-primary" size={28}/><h3 className="mt-4 font-display text-xl font-extrabold">المستخدم الحالي والصلاحيات</h3><p className="mt-3 text-sm text-muted-foreground">تُدار صلاحيات هذه الصفحة من خلال جلسة الدخول الحالية. حالة مدير النظام: <span className="font-bold text-primary">{isAdmin ? "مفعّلة" : "غير مفعّلة"}</span></p></div>{isAdmin && <div className="rounded-2xl border bg-card p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-display text-lg font-extrabold">الموظفون والحسابات</h3><p className="mt-1 text-xs leading-6 text-muted-foreground">الحساب يظهر هنا بعد تسجيل صاحبه الدخول. ابحث بالاسم أو البريد، ثم عيّن له دوره الوظيفي في دورة الصرف.</p></div><div className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2"><Search size={15} className="text-muted-foreground"/><input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} className="w-full bg-transparent text-sm outline-none sm:w-48" placeholder="بحث عن مستخدم" aria-label="البحث عن مستخدم"/></div></div><div className="mt-4 rounded-xl bg-secondary/60 px-4 py-3 text-xs leading-6 text-muted-foreground">لا ننشئ كلمات مرور من داخل TREZO. أنشئ هوية الموظف من مزود تسجيل الدخول، وبعد أول دخول ستظهر هنا لتعيين: محاسب، مراجع، مدير مالي، مدير عام، أو مدقق.</div><div className="mt-4 divide-y">{systemUsers.error ? <p className="py-5 text-sm text-destructive">تعذر تحميل المستخدمين: {systemUsers.error.message}</p> : systemUsers.isLoading ? <p className="py-5 text-sm text-muted-foreground">جارٍ تحميل المستخدمين…</p> : (systemUsers.data ?? []).filter((user) => { const term = userSearch.trim().toLocaleLowerCase(); return !term || `${user.name ?? ""} ${user.email ?? ""}`.toLocaleLowerCase().includes(term); }).length ? (systemUsers.data ?? []).filter((user) => { const term = userSearch.trim().toLocaleLowerCase(); return !term || `${user.name ?? ""} ${user.email ?? ""}`.toLocaleLowerCase().includes(term); }).map((user) => <div key={user.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold">{user.name ?? "مستخدم بلا اسم"}</p><p className="text-xs text-muted-foreground">{user.email ?? "بدون بريد"}</p><p className="mt-1 text-[11px] font-semibold text-primary">{user.operationalRole ? `الدور الحالي: ${({ accountant: "محاسب", reviewer: "مراجع", cfo: "مدير مالي", gm: "مدير عام", auditor: "مدقق" } as const)[user.operationalRole as "accountant" | "reviewer" | "cfo" | "gm" | "auditor"] ?? user.operationalRole}` : "لم يُعيّن دور تشغيلي بعد"}</p></div><div className="flex flex-wrap gap-2"><select value={user.role} disabled={updateUserRole.isPending || false} onChange={(e) => updateUserRole.mutate({ id: user.id, role: e.target.value as "user" | "admin" })} className="rounded-xl border bg-background px-3 py-2 text-sm"><option value="user">مستخدم</option><option value="admin">مدير النظام</option></select><select value={user.operationalRole ?? ""} disabled={assignOperationalRole.isPending || false} onChange={(e) => { if (e.target.value) assignOperationalRole.mutate({ userId: user.id, role: e.target.value as "accountant" | "reviewer" | "cfo" | "gm" | "auditor" }); }} className="rounded-xl border bg-background px-3 py-2 text-sm"><option value="">اختر وظيفة الموظف</option><option value="accountant">محاسب</option><option value="reviewer">مراجع</option><option value="cfo">مدير مالي</option><option value="gm">مدير عام</option><option value="auditor">مدقق</option></select></div></div>) : <p className="py-5 text-sm text-muted-foreground">{userSearch ? "لا توجد نتائج مطابقة." : "لا توجد قائمة مستخدمين متاحة."}</p>}</div></div>}{isAdmin && <InternalEmployeesPanel />}<div className="rounded-2xl border bg-card p-5"><div className="flex items-center justify-between gap-3"><div><h3 className="font-display text-lg font-extrabold">الهيكل التشغيلي المقترح</h3><p className="mt-1 text-xs text-muted-foreground">ملفات أدوار واضحة لتوزيع العمل بين المحاسبين والمراجعة والاعتماد والتدقيق.</p></div><span className="rounded-full bg-secondary px-3 py-1 text-[11px] font-bold text-primary">جاهز للتهيئة</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{getOperationalProfiles().map((profile) => <div key={profile.key} className="rounded-xl bg-secondary p-4"><p className="font-bold text-primary">{profile.label}</p><p className="mt-2 text-xs leading-6 text-muted-foreground">{profile.description}</p></div>)}</div><p className="mt-4 text-xs leading-6 text-muted-foreground">تظل صلاحيات الخادم الحالية هي مصدر القرار النهائي، ولا يستطيع المستخدم تجاوزها من الواجهة.</p></div><p className="text-sm leading-7 text-muted-foreground">تُفحص صلاحيات العمليات الحساسة في الخادم، ولا تعتمد الواجهة وحدها على إخفاء الأزرار.</p>{permissions.data && <div className="mt-5 border-t pt-5"><h4 className="font-display font-extrabold">مصفوفة صلاحيات الدور الحالي</h4><div className="mt-3 grid gap-2 sm:grid-cols-2">{permissions.data.keys.map((permission) => <div key={permission.key} className="flex items-center justify-between rounded-xl bg-secondary px-3 py-2 text-xs"><span dir="ltr">{permission.key}</span><button disabled={updatePermission.isPending || !isAdmin || !permissions.data.roleId || !permission.permissionId} onClick={() => { if (permissions.data.roleId && permission.permissionId) updatePermission.mutate({ roleId: permissions.data.roleId, permissionId: permission.permissionId, enabled: !permission.enabled }); }} className={permission.enabled ? "rounded-lg bg-secondary px-2.5 py-1 font-bold text-primary" : "rounded-lg bg-muted px-2.5 py-1 text-muted-foreground"}>{permission.enabled ? "مفعّلة" : "غير مفعّلة"}</button></div>)}</div><p className="mt-3 text-xs text-muted-foreground">يمكن لمدير النظام تفعيل أو تعطيل الصلاحية للدور الحالي، وتُطبق الحماية على الخادم بعد الحفظ.</p>{permissions.isLoading ? <p className="mt-3 text-xs text-muted-foreground">جارٍ تحميل مصفوفة الصلاحيات…</p> : null}{permissionMessage ? <p className="mt-3 text-xs font-semibold text-primary">{permissionMessage}</p> : null}</div>}</div>}
-  </section>;
+  return (
+    <section className="mx-auto max-w-[1500px] p-5 sm:p-8">
+      <button
+        onClick={onBack}
+        className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-primary"
+      >
+        <ArrowRight size={16} /> العودة للوحة الرئيسية
+      </button>
+      <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs font-semibold text-primary">مساحة العمل</p>
+          <h2 className="mt-1 font-display text-3xl font-extrabold">{title}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            إدارة منظمة ومراجعة واضحة لكل عناصر الخزينة.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-xs font-semibold">
+            <span className="text-muted-foreground">الشركة النشطة</span>
+            <select
+              value={activeCompanyId}
+              onChange={event => setActiveCompanyId(event.target.value)}
+              className="bg-transparent text-sm font-bold outline-none"
+              aria-label="الشركة النشطة العامة"
+            >
+              <option value="all">كل الشركات</option>
+              {(companies.data ?? []).map(company => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {active === "requests" &&
+            (isAdmin || operationalRoles.includes("accountant")) && (
+              <button
+                onClick={onCreateRequest}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <Plus size={17} /> إنشاء طلب صرف
+              </button>
+            )}
+          {active === "reports" && (
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Printer size={17} /> معاينة الطباعة
+            </button>
+          )}
+        </div>
+      </div>
+      {active === "entities" &&
+        (entityLoading ? (
+          <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">
+            جارٍ تحميل بيانات الجهات…
+          </div>
+        ) : entityError ? (
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center">
+            <p className="text-sm font-bold text-destructive">
+              تعذر تحميل بيانات الجهات
+            </p>
+            <p className="mt-2 text-sm text-destructive/90">
+              {entityError.message}
+            </p>
+            <button
+              onClick={() => {
+                void companies.refetch();
+                void beneficiaries.refetch();
+                void banks.refetch();
+                void channels.refetch();
+              }}
+              className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            <EntityList
+              title="الشركات"
+              items={companies.data ?? []}
+              onAdd={() => {
+                resetEntityForm();
+                setEntityKind("company");
+              }}
+              onEdit={item => startEdit("company", item)}
+              onRemove={id => removeCompany.mutate({ id })}
+            />
+            <EntityList
+              title="المستفيدون"
+              items={beneficiaries.data ?? []}
+              onAdd={() => {
+                resetEntityForm();
+                setEntityKind("beneficiary");
+              }}
+              onEdit={item => startEdit("beneficiary", item)}
+              onRemove={id => removeBeneficiary.mutate({ id })}
+            />
+            <EntityList
+              title="البنوك"
+              items={banks.data ?? []}
+              onAdd={() => {
+                resetEntityForm();
+                setEntityKind("bank");
+              }}
+              onEdit={item => startEdit("bank", item)}
+              onRemove={id => removeBank.mutate({ id })}
+            />
+            <EntityList
+              title="قنوات الصرف"
+              items={channels.data ?? []}
+              onAdd={() => {
+                resetEntityForm();
+                setEntityKind("channel");
+              }}
+              onEdit={item => startEdit("channel", item)}
+              onRemove={id => removeChannel.mutate({ id })}
+            />
+            <EntityForm
+              kind={entityKind}
+              editingId={editingId}
+              form={entityForm}
+              companies={companies.data ?? []}
+              message={entityMessage}
+              onKindChange={kind => {
+                resetEntityForm();
+                setEntityKind(kind);
+              }}
+              onChange={(field, value) =>
+                setEntityForm(current => ({ ...current, [field]: value }))
+              }
+              onSubmit={submitEntity}
+              onCancel={resetEntityForm}
+            />
+          </div>
+        ))}
+      {active === "requests" &&
+        (requests.isLoading ? (
+          <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">
+            جارٍ تحميل طلبات الصرف…
+          </div>
+        ) : requests.error ? (
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center">
+            <p className="text-sm font-bold text-destructive">
+              تعذر تحميل طلبات الصرف
+            </p>
+            <p className="mt-2 text-sm text-destructive/90">
+              {requests.error.message}
+            </p>
+            <button
+              onClick={() => void requests.refetch()}
+              className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : (
+          <>
+            <RequestWorkflow
+              rows={requests.data ?? []}
+              currencies={currencies.data ?? []}
+              companies={companies.data ?? []}
+              beneficiaries={beneficiaries.data ?? []}
+              channels={channels.data ?? []}
+              operationalRoles={operationalRoles}
+              isAdmin={isAdmin}
+              initialCompanyId={activeCompanyId}
+              onCreateRequest={onCreateRequest}
+            />
+          </>
+        ))}
+      {active === "calendar" &&
+        (calendar.isLoading ||
+        calendarChannels.isLoading ||
+        fiscalYears.isLoading ? (
+          <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">
+            جارٍ تحميل تقويم المدفوعات…
+          </div>
+        ) : calendarError ? (
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center">
+            <p className="text-sm font-bold text-destructive">
+              تعذر تحميل تقويم المدفوعات
+            </p>
+            <p className="mt-2 text-sm text-destructive/90">
+              {calendarError.message}
+            </p>
+            <button
+              onClick={() => {
+                void calendar.refetch();
+                void calendarChannels.refetch();
+                void fiscalYears.refetch();
+              }}
+              className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+            <div className="space-y-4">
+              <div className="rounded-2xl border bg-card p-4">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  className="mx-auto"
+                />
+              </div>
+              <div className="rounded-2xl border bg-card p-5">
+                <p className="text-sm font-bold">إعدادات التحويل</p>
+                <label className="mt-4 block text-xs font-semibold">
+                  قناة الصرف
+                </label>
+                <select
+                  value={selectedChannelId ?? ""}
+                  onChange={e =>
+                    setSelectedChannelId(
+                      e.target.value ? Number(e.target.value) : undefined
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border bg-background px-3 py-3 text-sm"
+                >
+                  <option value="">اختر القناة</option>
+                  {(calendarChannels.data ?? []).map(channel => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+                <label className="mt-4 block text-xs font-semibold">
+                  السنة المالية
+                </label>
+                <select
+                  value={selectedFiscalYearId ?? ""}
+                  onChange={e =>
+                    setSelectedFiscalYearId(
+                      e.target.value ? Number(e.target.value) : undefined
+                    )
+                  }
+                  className="mt-2 w-full rounded-xl border bg-background px-3 py-3 text-sm"
+                >
+                  <option value="">اختر السنة</option>
+                  {(fiscalYears.data ?? []).map(year => (
+                    <option key={year.id} value={year.id}>
+                      {year.year}
+                    </option>
+                  ))}
+                </select>
+                {!calendarChannels.data?.length || !fiscalYears.data?.length ? (
+                  <p className="mt-3 text-xs leading-6 text-amber-700">
+                    أضف قناة صرف وسنة مالية قبل تحويل الموعد.
+                  </p>
+                ) : null}
+                {calendarMessage ? (
+                  <p className="mt-3 text-xs leading-6 text-primary">
+                    {calendarMessage}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-2xl border bg-card">
+              <div className="border-b p-5">
+                <h3 className="font-display text-lg font-extrabold">
+                  استحقاقات{" "}
+                  {selectedDate
+                    ? selectedDate.toLocaleDateString("ar-SA")
+                    : "القادمة"}
+                </h3>
+              </div>
+              <div className="divide-y">
+                {(calendar.data ?? [])
+                  .filter(
+                    r =>
+                      !selectedDate ||
+                      new Date(r.dueDate).toDateString() ===
+                        selectedDate.toDateString()
+                  )
+                  .map(r => (
+                    <div
+                      key={r.id}
+                      className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <p className="font-bold">{r.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {r.amount} {r.currency} ·{" "}
+                          {new Date(r.dueDate).toLocaleDateString("ar-SA")}
+                        </p>
+                      </div>
+                      {r.convertedRequestId ? (
+                        <span className="text-xs font-bold text-primary">
+                          تم التحويل
+                        </span>
+                      ) : (
+                        <button
+                          disabled={
+                            convertCalendar.isPending ||
+                            !selectedChannelId ||
+                            !selectedFiscalYearId
+                          }
+                          onClick={() => {
+                            if (selectedChannelId && selectedFiscalYearId)
+                              convertCalendar.mutate({
+                                entryId: r.id,
+                                channelId: selectedChannelId,
+                                fiscalYearId: selectedFiscalYearId,
+                              });
+                          }}
+                          className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                        >
+                          {convertCalendar.isPending
+                            ? "جارٍ التحويل…"
+                            : "تحويل إلى طلب صرف"}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                {!(calendar.data ?? []).length && (
+                  <p className="p-10 text-center text-sm text-muted-foreground">
+                    لا توجد مواعيد مدفوعات مسجلة.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      {active === "audit" && (
+        <AuditTrailPanel
+          rows={audit.data ?? []}
+          isLoading={audit.isLoading}
+          error={audit.error}
+          onRetry={() => void audit.refetch()}
+          action={auditAction}
+          from={auditFrom}
+          to={auditTo}
+          onActionChange={setAuditAction}
+          onFromChange={setAuditFrom}
+          onToChange={setAuditTo}
+        />
+      )}
+      {active === "reports" && (
+        <>
+          <FinancialReportsPanel />
+          {requests.isLoading ? (
+            <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">
+              جارٍ تحميل بيانات التقارير…
+            </div>
+          ) : requests.error ? (
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-8 text-center">
+              <h3 className="font-display text-lg font-extrabold text-destructive">
+                تعذر تحميل بيانات الطباعة
+              </h3>
+              <p className="mt-2 text-sm text-destructive/90">
+                {requests.error.message}
+              </p>
+              <button
+                onClick={() => void requests.refetch()}
+                className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          ) : (
+            <PrintCenter rows={requests.data ?? []} />
+          )}
+        </>
+      )}
+      {active === "settings" && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="rounded-2xl border bg-card p-6">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="text-primary" size={28} />
+              <div>
+                <h3 className="font-display text-xl font-extrabold">
+                  السنوات المالية
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  السنوات والتسلسلات المتاحة للنظام.
+                </p>
+                <div className="mt-5 rounded-xl bg-secondary/60 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input
+                      value={fiscalYearForm.year}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          year: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      inputMode="numeric"
+                      placeholder="السنة، مثال 2026"
+                      aria-label="السنة المالية"
+                    />
+                    <input
+                      value={fiscalYearForm.label}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          label: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      placeholder="اسم السنة المالية"
+                      aria-label="اسم السنة المالية"
+                    />
+                    <input
+                      type="date"
+                      value={fiscalYearForm.startsOn}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          startsOn: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      aria-label="بداية السنة المالية"
+                    />
+                    <input
+                      type="date"
+                      value={fiscalYearForm.endsOn}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          endsOn: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      aria-label="نهاية السنة المالية"
+                    />
+                    <input
+                      value={fiscalYearForm.prefix}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          prefix: event.target.value.toUpperCase(),
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      placeholder="بادئة الرقم، TRZ"
+                      aria-label="بادئة الرقم المرجعي"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      value={fiscalYearForm.padding}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          padding: event.target.value,
+                        }))
+                      }
+                      className="rounded-xl border bg-background px-3 py-3 text-sm"
+                      placeholder="عدد الخانات"
+                      aria-label="عدد خانات الرقم المرجعي"
+                    />
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={fiscalYearForm.isCurrent}
+                      onChange={event =>
+                        setFiscalYearForm(current => ({
+                          ...current,
+                          isCurrent: event.target.checked,
+                        }))
+                      }
+                    />{" "}
+                    تعيين كسنة مالية حالية
+                  </label>
+                  <button
+                    disabled={
+                      createFiscalYear.isPending ||
+                      !fiscalYearForm.year ||
+                      !fiscalYearForm.startsOn ||
+                      !fiscalYearForm.endsOn
+                    }
+                    onClick={() =>
+                      createFiscalYear.mutate({
+                        year: Number(fiscalYearForm.year),
+                        label:
+                          fiscalYearForm.label.trim() ||
+                          `السنة المالية ${fiscalYearForm.year}`,
+                        startsOn: new Date(
+                          `${fiscalYearForm.startsOn}T00:00:00Z`
+                        ),
+                        endsOn: new Date(`${fiscalYearForm.endsOn}T23:59:59Z`),
+                        isCurrent: fiscalYearForm.isCurrent,
+                        prefix:
+                          fiscalYearForm.prefix.trim().toUpperCase() || "TRZ",
+                        padding: Number(fiscalYearForm.padding) || 5,
+                      })
+                    }
+                    className="mt-3 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground disabled:opacity-50"
+                  >
+                    {createFiscalYear.isPending
+                      ? "جارٍ الحفظ…"
+                      : "إضافة السنة المالية"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 space-y-2">
+              {settingsYears.error ? (
+                <p className="text-sm text-destructive">
+                  تعذر تحميل السنوات المالية: {settingsYears.error.message}
+                </p>
+              ) : settingsYears.isLoading ? (
+                <p className="text-sm text-muted-foreground">جارٍ التحميل…</p>
+              ) : (settingsYears.data ?? []).length ? (
+                (settingsYears.data ?? []).map(year => (
+                  <div
+                    key={year.id}
+                    className="flex items-center justify-between rounded-xl bg-secondary px-4 py-3 text-sm"
+                  >
+                    <span>السنة المالية {year.year}</span>
+                    <span className="text-xs font-semibold text-primary">
+                      {year.isCurrent ? "السنة الحالية" : "متاحة"}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  لا توجد سنوات مالية مهيأة بعد.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl border bg-card p-6">
+            <h3 className="font-display text-xl font-extrabold">
+              العملات النشطة
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              العملات المسموح استخدامها في طلبات الصرف. الريال اليمني YER هو
+              الافتراضي.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">
+                اختيار سريع:
+              </span>
+              {currencyPresets.map(preset => (
+                <button
+                  key={preset.code}
+                  type="button"
+                  onClick={() =>
+                    setCurrencyForm(current => ({ ...current, ...preset }))
+                  }
+                  className="rounded-full border px-3 py-1.5 text-xs font-bold transition-colors hover:bg-secondary"
+                >
+                  {preset.code} — {preset.nameAr}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 rounded-xl bg-secondary/60 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  value={currencyForm.code}
+                  onChange={event =>
+                    setCurrencyForm(current => ({
+                      ...current,
+                      code: event.target.value.toUpperCase(),
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-3 text-sm"
+                  maxLength={3}
+                  placeholder="الرمز، YER"
+                  aria-label="رمز العملة"
+                />
+                <input
+                  value={currencyForm.nameAr}
+                  onChange={event =>
+                    setCurrencyForm(current => ({
+                      ...current,
+                      nameAr: event.target.value,
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-3 text-sm"
+                  placeholder="اسم العملة بالعربية"
+                  aria-label="اسم العملة بالعربية"
+                />
+                <input
+                  value={currencyForm.nameEn}
+                  onChange={event =>
+                    setCurrencyForm(current => ({
+                      ...current,
+                      nameEn: event.target.value,
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-3 text-sm"
+                  placeholder="اسم العملة بالإنجليزية"
+                  aria-label="اسم العملة بالإنجليزية"
+                />
+                <input
+                  value={currencyForm.symbol}
+                  onChange={event =>
+                    setCurrencyForm(current => ({
+                      ...current,
+                      symbol: event.target.value,
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-3 text-sm"
+                  placeholder="رمز العرض"
+                  aria-label="رمز العرض"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="6"
+                  value={currencyForm.decimals}
+                  onChange={event =>
+                    setCurrencyForm(current => ({
+                      ...current,
+                      decimals: event.target.value,
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-3 text-sm"
+                  placeholder="المنازل العشرية"
+                  aria-label="المنازل العشرية"
+                />
+              </div>
+              <button
+                disabled={
+                  createCurrency.isPending ||
+                  currencyForm.code.length !== 3 ||
+                  !currencyForm.nameAr.trim()
+                }
+                onClick={() =>
+                  createCurrency.mutate({
+                    code: currencyForm.code,
+                    nameAr: currencyForm.nameAr.trim(),
+                    nameEn:
+                      currencyForm.nameEn.trim() || currencyForm.nameAr.trim(),
+                    symbol: currencyForm.symbol.trim() || currencyForm.code,
+                    decimals: Number(currencyForm.decimals) || 2,
+                  })
+                }
+                className="mt-3 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground disabled:opacity-50"
+              >
+                {createCurrency.isPending ? "جارٍ الحفظ…" : "إضافة العملة"}
+              </button>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {settingsCurrencies.error ? (
+                <p className="text-sm text-destructive">
+                  تعذر تحميل العملات: {settingsCurrencies.error.message}
+                </p>
+              ) : settingsCurrencies.isLoading ? (
+                <p className="text-sm text-muted-foreground">جارٍ التحميل…</p>
+              ) : (settingsCurrencies.data ?? []).length ? (
+                (settingsCurrencies.data ?? []).map(currency => (
+                  <span
+                    key={currency.code}
+                    className="rounded-full bg-secondary px-4 py-2 text-sm font-bold text-primary"
+                  >
+                    {currency.code} · {currency.nameAr}
+                  </span>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  لا توجد عملات نشطة بعد.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {active === "settings" && isAdmin && <SequenceSettingsPanel />}
+      {active === "settings" && <ExchangeRatesPanel hint={exchangeRateHint} />}
+      {active === "settings" && isAdmin && <ApprovalPoliciesPanel />}
+      {active === "settings" && <OverdueAlertsCard />}
+      {active === "users" && (
+        <div className="space-y-5">
+          <div className="rounded-2xl border bg-card p-8">
+            <ShieldCheck className="text-primary" size={28} />
+            <h3 className="mt-4 font-display text-xl font-extrabold">
+              المستخدم الحالي والصلاحيات
+            </h3>
+            <p className="mt-3 text-sm text-muted-foreground">
+              تُدار صلاحيات هذه الصفحة من خلال جلسة الدخول الحالية. حالة مدير
+              النظام:{" "}
+              <span className="font-bold text-primary">
+                {isAdmin ? "مفعّلة" : "غير مفعّلة"}
+              </span>
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="rounded-2xl border bg-card p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-display text-lg font-extrabold">
+                    الموظفون والحسابات
+                  </h3>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                    الحساب يظهر هنا بعد تسجيل صاحبه الدخول. ابحث بالاسم أو
+                    البريد، ثم عيّن له دوره الوظيفي في دورة الصرف.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2">
+                  <Search size={15} className="text-muted-foreground" />
+                  <input
+                    value={userSearch}
+                    onChange={event => setUserSearch(event.target.value)}
+                    className="w-full bg-transparent text-sm outline-none sm:w-48"
+                    placeholder="بحث عن مستخدم"
+                    aria-label="البحث عن مستخدم"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl bg-secondary/60 px-4 py-3 text-xs leading-6 text-muted-foreground">
+                لا ننشئ كلمات مرور من داخل TREZO. أنشئ هوية الموظف من مزود تسجيل
+                الدخول، وبعد أول دخول ستظهر هنا لتعيين: محاسب، مراجع، مدير مالي،
+                مدير عام، أو مدقق.
+              </div>
+              <div className="mt-4 divide-y">
+                {systemUsers.error ? (
+                  <p className="py-5 text-sm text-destructive">
+                    تعذر تحميل المستخدمين: {systemUsers.error.message}
+                  </p>
+                ) : systemUsers.isLoading ? (
+                  <p className="py-5 text-sm text-muted-foreground">
+                    جارٍ تحميل المستخدمين…
+                  </p>
+                ) : (systemUsers.data ?? []).filter(user => {
+                    const term = userSearch.trim().toLocaleLowerCase();
+                    return (
+                      !term ||
+                      `${user.name ?? ""} ${user.email ?? ""}`
+                        .toLocaleLowerCase()
+                        .includes(term)
+                    );
+                  }).length ? (
+                  (systemUsers.data ?? [])
+                    .filter(user => {
+                      const term = userSearch.trim().toLocaleLowerCase();
+                      return (
+                        !term ||
+                        `${user.name ?? ""} ${user.email ?? ""}`
+                          .toLocaleLowerCase()
+                          .includes(term)
+                      );
+                    })
+                    .map(user => (
+                      <div
+                        key={user.id}
+                        className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div>
+                          <p className="font-bold">
+                            {user.name ?? "مستخدم بلا اسم"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {user.email ?? "بدون بريد"}
+                          </p>
+                          <p className="mt-1 text-[11px] font-semibold text-primary">
+                            {user.operationalRole
+                              ? `الدور الحالي: ${({ accountant: "محاسب", reviewer: "مراجع", cfo: "مدير مالي", gm: "مدير عام", auditor: "مدقق" } as const)[user.operationalRole as "accountant" | "reviewer" | "cfo" | "gm" | "auditor"] ?? user.operationalRole}`
+                              : "لم يُعيّن دور تشغيلي بعد"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <select
+                            value={user.role}
+                            disabled={updateUserRole.isPending || false}
+                            onChange={e =>
+                              updateUserRole.mutate({
+                                id: user.id,
+                                role: e.target.value as "user" | "admin",
+                              })
+                            }
+                            className="rounded-xl border bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="user">مستخدم</option>
+                            <option value="admin">مدير النظام</option>
+                          </select>
+                          <select
+                            value={user.operationalRole ?? ""}
+                            disabled={assignOperationalRole.isPending || false}
+                            onChange={e => {
+                              if (e.target.value)
+                                assignOperationalRole.mutate({
+                                  userId: user.id,
+                                  role: e.target.value as
+                                    | "accountant"
+                                    | "reviewer"
+                                    | "cfo"
+                                    | "gm"
+                                    | "auditor",
+                                });
+                            }}
+                            className="rounded-xl border bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="">اختر وظيفة الموظف</option>
+                            <option value="accountant">محاسب</option>
+                            <option value="reviewer">مراجع</option>
+                            <option value="cfo">مدير مالي</option>
+                            <option value="gm">مدير عام</option>
+                            <option value="auditor">مدقق</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <p className="py-5 text-sm text-muted-foreground">
+                    {userSearch
+                      ? "لا توجد نتائج مطابقة."
+                      : "لا توجد قائمة مستخدمين متاحة."}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {isAdmin && <InternalEmployeesPanel />}
+          <div className="rounded-2xl border bg-card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-display text-lg font-extrabold">
+                  الهيكل التشغيلي المقترح
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  ملفات أدوار واضحة لتوزيع العمل بين المحاسبين والمراجعة
+                  والاعتماد والتدقيق.
+                </p>
+              </div>
+              <span className="rounded-full bg-secondary px-3 py-1 text-[11px] font-bold text-primary">
+                جاهز للتهيئة
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {getOperationalProfiles().map(profile => (
+                <div key={profile.key} className="rounded-xl bg-secondary p-4">
+                  <p className="font-bold text-primary">{profile.label}</p>
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                    {profile.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-xs leading-6 text-muted-foreground">
+              تظل صلاحيات الخادم الحالية هي مصدر القرار النهائي، ولا يستطيع
+              المستخدم تجاوزها من الواجهة.
+            </p>
+          </div>
+          <p className="text-sm leading-7 text-muted-foreground">
+            تُفحص صلاحيات العمليات الحساسة في الخادم، ولا تعتمد الواجهة وحدها
+            على إخفاء الأزرار.
+          </p>
+          {permissions.data && (
+            <div className="mt-5 border-t pt-5">
+              <h4 className="font-display font-extrabold">
+                مصفوفة صلاحيات الدور الحالي
+              </h4>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {permissions.data.keys.map(permission => (
+                  <div
+                    key={permission.key}
+                    className="flex items-center justify-between rounded-xl bg-secondary px-3 py-2 text-xs"
+                  >
+                    <span dir="ltr">{permission.key}</span>
+                    <button
+                      disabled={
+                        updatePermission.isPending ||
+                        !isAdmin ||
+                        !permissions.data.roleId ||
+                        !permission.permissionId
+                      }
+                      onClick={() => {
+                        if (permissions.data.roleId && permission.permissionId)
+                          updatePermission.mutate({
+                            roleId: permissions.data.roleId,
+                            permissionId: permission.permissionId,
+                            enabled: !permission.enabled,
+                          });
+                      }}
+                      className={
+                        permission.enabled
+                          ? "rounded-lg bg-secondary px-2.5 py-1 font-bold text-primary"
+                          : "rounded-lg bg-muted px-2.5 py-1 text-muted-foreground"
+                      }
+                    >
+                      {permission.enabled ? "مفعّلة" : "غير مفعّلة"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                يمكن لمدير النظام تفعيل أو تعطيل الصلاحية للدور الحالي، وتُطبق
+                الحماية على الخادم بعد الحفظ.
+              </p>
+              {permissions.isLoading ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  جارٍ تحميل مصفوفة الصلاحيات…
+                </p>
+              ) : null}
+              {permissionMessage ? (
+                <p className="mt-3 text-xs font-semibold text-primary">
+                  {permissionMessage}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function SequenceSettingsPanel() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const sequences = trpc.settings.sequenceSettings.useQuery();
   const updatePrefix = trpc.settings.updateSequencePrefix.useMutation({
-    onSuccess: () => { void sequences.refetch(); },
+    onSuccess: () => {
+      void sequences.refetch();
+    },
   });
 
-  return <div className="mt-5 rounded-2xl border bg-card p-6">
-    <div className="flex items-start justify-between gap-3">
-      <div><h3 className="font-display text-xl font-extrabold">ترقيم السندات حسب الشركة</h3><p className="mt-1 text-xs leading-6 text-muted-foreground">لكل شركة بادئة مستقلة. لا يتم تحويل العملات ولا مشاركة الرقم بين الشركات، ويستمر الحجز الذري عند العمل المتزامن.</p></div>
-      <ShieldCheck className="shrink-0 text-primary" size={25}/>
+  return (
+    <div className="mt-5 rounded-2xl border bg-card p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-xl font-extrabold">
+            ترقيم السندات حسب الشركة
+          </h3>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
+            لكل شركة بادئة مستقلة. لا يتم تحويل العملات ولا مشاركة الرقم بين
+            الشركات، ويستمر الحجز الذري عند العمل المتزامن.
+          </p>
+        </div>
+        <ShieldCheck className="shrink-0 text-primary" size={25} />
+      </div>
+      <div className="mt-4 space-y-2">
+        {sequences.error ? (
+          <p className="text-sm text-destructive">
+            تعذر تحميل إعدادات الترقيم: {sequences.error.message}
+          </p>
+        ) : sequences.isLoading ? (
+          <p className="text-sm text-muted-foreground">
+            جارٍ تحميل إعدادات الترقيم…
+          </p>
+        ) : (sequences.data ?? []).length ? (
+          (sequences.data ?? []).map(sequence => {
+            const value = drafts[sequence.id] ?? sequence.prefix;
+            return (
+              <div
+                key={sequence.id}
+                className="grid gap-3 rounded-xl bg-secondary/60 p-4 sm:grid-cols-[1fr_180px_auto] sm:items-center"
+              >
+                <div>
+                  <p className="font-bold">{sequence.companyName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    السنة المالية {sequence.fiscalYear} · الرقم التالي{" "}
+                    {sequence.nextValue}
+                  </p>
+                </div>
+                <input
+                  value={value}
+                  onChange={event =>
+                    setDrafts(current => ({
+                      ...current,
+                      [sequence.id]: event.target.value.toUpperCase(),
+                    }))
+                  }
+                  className="rounded-xl border bg-background px-3 py-2.5 text-sm font-bold"
+                  maxLength={24}
+                  pattern="[A-Z0-9_-]{2,24}"
+                  aria-label={`بادئة ${sequence.companyName}`}
+                />
+                <button
+                  type="button"
+                  disabled={
+                    updatePrefix.isPending || !/^[A-Z0-9_-]{2,24}$/.test(value)
+                  }
+                  onClick={() =>
+                    updatePrefix.mutate({ id: sequence.id, prefix: value })
+                  }
+                  className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-50"
+                >
+                  حفظ البادئة
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            لا توجد إعدادات ترقيم. أنشئ سنة مالية بعد إضافة شركة نشطة.
+          </p>
+        )}
+      </div>
+      {updatePrefix.error ? (
+        <p className="mt-3 text-sm text-destructive">
+          تعذر حفظ البادئة: {updatePrefix.error.message}
+        </p>
+      ) : null}
     </div>
-    <div className="mt-4 space-y-2">
-      {sequences.error ? <p className="text-sm text-destructive">تعذر تحميل إعدادات الترقيم: {sequences.error.message}</p> : sequences.isLoading ? <p className="text-sm text-muted-foreground">جارٍ تحميل إعدادات الترقيم…</p> : (sequences.data ?? []).length ? (sequences.data ?? []).map((sequence) => {
-        const value = drafts[sequence.id] ?? sequence.prefix;
-        return <div key={sequence.id} className="grid gap-3 rounded-xl bg-secondary/60 p-4 sm:grid-cols-[1fr_180px_auto] sm:items-center">
-          <div><p className="font-bold">{sequence.companyName}</p><p className="text-xs text-muted-foreground">السنة المالية {sequence.fiscalYear} · الرقم التالي {sequence.nextValue}</p></div>
-          <input value={value} onChange={(event) => setDrafts((current) => ({ ...current, [sequence.id]: event.target.value.toUpperCase() }))} className="rounded-xl border bg-background px-3 py-2.5 text-sm font-bold" maxLength={24} pattern="[A-Z0-9_-]{2,24}" aria-label={`بادئة ${sequence.companyName}`}/>
-          <button type="button" disabled={updatePrefix.isPending || !/^[A-Z0-9_-]{2,24}$/.test(value)} onClick={() => updatePrefix.mutate({ id: sequence.id, prefix: value })} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-50">حفظ البادئة</button>
-        </div>;
-      }) : <p className="text-sm text-muted-foreground">لا توجد إعدادات ترقيم. أنشئ سنة مالية بعد إضافة شركة نشطة.</p>}
-    </div>
-    {updatePrefix.error ? <p className="mt-3 text-sm text-destructive">تعذر حفظ البادئة: {updatePrefix.error.message}</p> : null}
-  </div>;
+  );
 }
 
-function EntityList({ title, items, onAdd, onEdit, onRemove }: { title: string; items: Array<{ id: number; name?: string; code?: string; [key: string]: unknown }>; onAdd?: () => void; onEdit?: (item: Record<string, unknown>) => void; onRemove?: (id: number) => void }) { return <div className="rounded-2xl border bg-card p-5"><div className="flex items-center justify-between"><h3 className="font-display text-lg font-extrabold">{title}</h3>{onAdd && <button onClick={onAdd} className="inline-flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary"><Plus size={14}/> إضافة</button>}</div><div className="mt-4 space-y-2">{items.length ? items.map((item) => <div key={item.id} className="flex items-center justify-between rounded-xl bg-secondary px-3 py-3 text-sm"><span>{item.name ?? item.code ?? `#${item.id}`}</span><div className="flex items-center gap-3"><span className="font-display text-xs text-muted-foreground">#{item.id}</span>{onEdit && <button aria-label={`تعديل ${item.name ?? "العنصر"}`} onClick={() => onEdit(item)} className="text-muted-foreground hover:text-primary"><Pencil size={15}/></button>}{onRemove && <button aria-label={`حذف ${item.name ?? "العنصر"}`} onClick={() => onRemove(item.id)} className="text-muted-foreground hover:text-destructive"><Trash2 size={15}/></button>}</div></div>) : <p className="py-5 text-sm text-muted-foreground">لا توجد بيانات مسجلة بعد.</p>}</div></div>; }
+function EntityList({
+  title,
+  items,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  title: string;
+  items: Array<{
+    id: number;
+    name?: string;
+    code?: string;
+    [key: string]: unknown;
+  }>;
+  onAdd?: () => void;
+  onEdit?: (item: Record<string, unknown>) => void;
+  onRemove?: (id: number) => void;
+}) {
+  return (
+    <div className="rounded-2xl border bg-card p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-lg font-extrabold">{title}</h3>
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-xs font-bold text-primary"
+          >
+            <Plus size={14} /> إضافة
+          </button>
+        )}
+      </div>
+      <div className="mt-4 space-y-2">
+        {items.length ? (
+          items.map(item => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between rounded-xl bg-secondary px-3 py-3 text-sm"
+            >
+              <span>{item.name ?? item.code ?? `#${item.id}`}</span>
+              <div className="flex items-center gap-3">
+                <span className="font-display text-xs text-muted-foreground">
+                  #{item.id}
+                </span>
+                {onEdit && (
+                  <button
+                    aria-label={`تعديل ${item.name ?? "العنصر"}`}
+                    onClick={() => onEdit(item)}
+                    className="text-muted-foreground hover:text-primary"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                )}
+                {onRemove && (
+                  <button
+                    aria-label={`حذف ${item.name ?? "العنصر"}`}
+                    onClick={() => onRemove(item.id)}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="py-5 text-sm text-muted-foreground">
+            لا توجد بيانات مسجلة بعد.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type EntityKind = "company" | "beneficiary" | "bank" | "channel";
-type EntityFormState = { name: string; legalName: string; registrationNumber: string; defaultCurrency: string; companyId: string; address: string; logoUrl: string; type: "individual" | "organization"; taxNumber: string; phone: string; email: string; swiftCode: string; country: string; code: string; description: string };
-function EntityForm({ kind, editingId, form, companies, message, onKindChange, onChange, onSubmit, onCancel }: { kind: EntityKind; editingId?: number; form: EntityFormState; companies: Array<{ id: number; name: string }>; message: string; onKindChange: (kind: EntityKind) => void; onChange: (field: keyof EntityFormState, value: string) => void; onSubmit: () => void; onCancel: () => void }) { const field = (name: keyof EntityFormState, placeholder: string, type = "text") => <input type={type} value={form[name]} onChange={(event) => onChange(name, event.target.value)} className="rounded-xl border bg-background px-3 py-3" placeholder={placeholder}/>; return <div className="lg:col-span-2 rounded-2xl border bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-display text-lg font-extrabold">{editingId ? "تعديل بيانات الكيان" : "إضافة كيان جديد"}</h3><p className="mt-1 text-xs text-muted-foreground">حقول متخصصة وربط المستفيد بالشركة.</p></div><select value={kind} onChange={(event) => onKindChange(event.target.value as EntityKind)} className="rounded-xl border bg-background px-3 py-2 text-sm"><option value="company">شركة</option><option value="beneficiary">مستفيد</option><option value="bank">بنك</option><option value="channel">قناة صرف</option></select></div><div className="mt-4 grid gap-3 sm:grid-cols-2">{field("name", "الاسم *")}{kind === "company" && <>{field("legalName", "الاسم القانوني")}{field("registrationNumber", "رقم السجل التجاري")}{field("taxNumber", "الرقم الضريبي")}{field("phone", "هاتف الشركة")}{field("address", "العنوان")}{field("logoUrl", "رابط الشعار", "url")}{field("defaultCurrency", "العملة الافتراضية مثل SAR")}</>}{kind === "beneficiary" && <>{<select value={form.companyId} onChange={(event) => onChange("companyId", event.target.value)} className="rounded-xl border bg-background px-3 py-3"><option value="">اختر الشركة *</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>}<select value={form.type} onChange={(event) => onChange("type", event.target.value)} className="rounded-xl border bg-background px-3 py-3"><option value="organization">منشأة</option><option value="individual">فرد</option></select>{field("taxNumber", "الرقم الضريبي")}{field("phone", "الهاتف")}{field("email", "البريد الإلكتروني", "email")}</>}{kind === "bank" && <>{field("swiftCode", "رمز SWIFT")}{field("country", "الدولة")}</>}{kind === "channel" && <>{field("code", "رمز القناة *")}{field("description", "وصف القناة")}</>}</div>{message && <p className="mt-3 text-xs font-semibold text-destructive">{message}</p>}<div className="mt-4 flex flex-wrap gap-2"><button onClick={onSubmit} className="rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">{editingId ? "حفظ التعديلات" : "حفظ الكيان"}</button>{editingId && <button onClick={onCancel} className="rounded-xl border px-4 py-3 text-sm font-bold">إلغاء التعديل</button>}</div></div>; }
-function RequestWorkflow({ rows, currencies, companies, beneficiaries, channels, operationalRoles, isAdmin, initialCompanyId, onCreateRequest, onOpenRequest }: { rows: Array<{ id: number; referenceNumber: string; title: string; amount: string; currency: string; status: string; companyId?: number; beneficiaryId?: number; channelId?: number; scheduledFor?: Date | null; createdAt?: Date }>; currencies: CurrencyDefinition[]; companies: Array<{ id: number; name: string }>; beneficiaries: Array<{ id: number; name: string; companyId: number }>; channels: Array<{ id: number; name: string }>; operationalRoles: string[]; isAdmin: boolean; initialCompanyId: string; onCreateRequest: () => void; onOpenRequest: (requestId: number) => void }) {
+type EntityFormState = {
+  name: string;
+  legalName: string;
+  registrationNumber: string;
+  defaultCurrency: string;
+  companyId: string;
+  address: string;
+  logoUrl: string;
+  type: "individual" | "organization";
+  taxNumber: string;
+  phone: string;
+  email: string;
+  swiftCode: string;
+  country: string;
+  code: string;
+  description: string;
+};
+function EntityForm({
+  kind,
+  editingId,
+  form,
+  companies,
+  message,
+  onKindChange,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  kind: EntityKind;
+  editingId?: number;
+  form: EntityFormState;
+  companies: Array<{ id: number; name: string }>;
+  message: string;
+  onKindChange: (kind: EntityKind) => void;
+  onChange: (field: keyof EntityFormState, value: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const field = (
+    name: keyof EntityFormState,
+    placeholder: string,
+    type = "text"
+  ) => (
+    <input
+      type={type}
+      value={form[name]}
+      onChange={event => onChange(name, event.target.value)}
+      className="rounded-xl border bg-background px-3 py-3"
+      placeholder={placeholder}
+    />
+  );
+  return (
+    <div className="lg:col-span-2 rounded-2xl border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg font-extrabold">
+            {editingId ? "تعديل بيانات الكيان" : "إضافة كيان جديد"}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            حقول متخصصة وربط المستفيد بالشركة.
+          </p>
+        </div>
+        <select
+          value={kind}
+          onChange={event => onKindChange(event.target.value as EntityKind)}
+          className="rounded-xl border bg-background px-3 py-2 text-sm"
+        >
+          <option value="company">شركة</option>
+          <option value="beneficiary">مستفيد</option>
+          <option value="bank">بنك</option>
+          <option value="channel">قناة صرف</option>
+        </select>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {field("name", "الاسم *")}
+        {kind === "company" && (
+          <>
+            {field("legalName", "الاسم القانوني")}
+            {field("registrationNumber", "رقم السجل التجاري")}
+            {field("taxNumber", "الرقم الضريبي")}
+            {field("phone", "هاتف الشركة")}
+            {field("address", "العنوان")}
+            {field("logoUrl", "رابط الشعار", "url")}
+            {field("defaultCurrency", "العملة الافتراضية مثل SAR")}
+          </>
+        )}
+        {kind === "beneficiary" && (
+          <>
+            {
+              <select
+                value={form.companyId}
+                onChange={event => onChange("companyId", event.target.value)}
+                className="rounded-xl border bg-background px-3 py-3"
+              >
+                <option value="">اختر الشركة *</option>
+                {companies.map(company => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+            }
+            <select
+              value={form.type}
+              onChange={event => onChange("type", event.target.value)}
+              className="rounded-xl border bg-background px-3 py-3"
+            >
+              <option value="organization">منشأة</option>
+              <option value="individual">فرد</option>
+            </select>
+            {field("taxNumber", "الرقم الضريبي")}
+            {field("phone", "الهاتف")}
+            {field("email", "البريد الإلكتروني", "email")}
+          </>
+        )}
+        {kind === "bank" && (
+          <>
+            {field("swiftCode", "رمز SWIFT")}
+            {field("country", "الدولة")}
+          </>
+        )}
+        {kind === "channel" && (
+          <>
+            {field("code", "رمز القناة *")}
+            {field("description", "وصف القناة")}
+          </>
+        )}
+      </div>
+      {message && (
+        <p className="mt-3 text-xs font-semibold text-destructive">{message}</p>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          onClick={onSubmit}
+          className="rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {editingId ? "حفظ التعديلات" : "حفظ الكيان"}
+        </button>
+        {editingId && (
+          <button
+            onClick={onCancel}
+            className="rounded-xl border px-4 py-3 text-sm font-bold"
+          >
+            إلغاء التعديل
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+function RequestWorkflow({
+  rows,
+  currencies,
+  companies,
+  beneficiaries,
+  channels,
+  operationalRoles,
+  isAdmin,
+  initialCompanyId,
+  onCreateRequest,
+}: {
+  rows: RequestRecord[];
+  currencies: CurrencyDefinition[];
+  companies: Array<{ id: number; name: string }>;
+  beneficiaries: Array<{ id: number; name: string; companyId: number }>;
+  channels: Array<{ id: number; name: string }>;
+  operationalRoles: string[];
+  isAdmin: boolean;
+  initialCompanyId: string;
+  onCreateRequest: () => void;
+}) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [awaitingMyAction, setAwaitingMyAction] = useState(false);
   const [companyFilter, setCompanyFilter] = useState(initialCompanyId);
-  useEffect(() => { setCompanyFilter(initialCompanyId); }, [initialCompanyId]);
+  useEffect(() => {
+    setCompanyFilter(initialCompanyId);
+  }, [initialCompanyId]);
   const [beneficiaryFilter, setBeneficiaryFilter] = useState("all");
   const [channelFilter, setChannelFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const companyName = (id?: number) => companies.find((item) => item.id === id)?.name ?? "غير محدد";
-  const beneficiaryName = (id?: number) => beneficiaries.find((item) => item.id === id)?.name ?? "غير محدد";
-  const channelName = (id?: number) => channels.find((item) => item.id === id)?.name ?? "غير محدد";
-  const statusLabels: Record<string, string> = { draft: "مسودة", review: "قيد المراجعة", approved: "معتمد", executed: "منفذ", rejected: "مرفوض" };
-  const filteredRows = rows.filter((row) => {
+  const companyName = (id?: number) =>
+    companies.find(item => item.id === id)?.name ?? "غير محدد";
+  const beneficiaryName = (id?: number) =>
+    beneficiaries.find(item => item.id === id)?.name ?? "غير محدد";
+  const channelName = (id?: number) =>
+    channels.find(item => item.id === id)?.name ?? "غير محدد";
+  const statusLabels: Record<string, string> = {
+    draft: "مسودة",
+    review: "قيد المراجعة",
+    approved: "معتمد",
+    executed: "منفذ",
+    rejected: "مرفوض",
+  };
+  const filteredRows = rows.filter(row => {
     const term = search.trim().toLocaleLowerCase();
-    const haystack = `${row.title} ${row.referenceNumber} ${row.currency} ${companyName(row.companyId)} ${beneficiaryName(row.beneficiaryId)} ${channelName(row.channelId)}`.toLocaleLowerCase();
+    const haystack =
+      `${row.title} ${row.referenceNumber} ${row.currency} ${companyName(row.companyId)} ${beneficiaryName(row.beneficiaryId)} ${channelName(row.channelId)}`.toLocaleLowerCase();
     const requestDate = new Date(row.scheduledFor ?? row.createdAt ?? 0);
-    return (!term || haystack.includes(term)) && (statusFilter === "all" || row.status === statusFilter) && (companyFilter === "all" || String(row.companyId) === companyFilter) && (beneficiaryFilter === "all" || String(row.beneficiaryId) === beneficiaryFilter) && (channelFilter === "all" || String(row.channelId) === channelFilter) && (!fromDate || requestDate >= new Date(`${fromDate}T00:00:00`)) && (!toDate || requestDate <= new Date(`${toDate}T23:59:59`));
+    return (
+      (!term || haystack.includes(term)) &&
+      (statusFilter === "all" || row.status === statusFilter) &&
+      (!awaitingMyAction ||
+        Boolean(getPendingRequestAction(row, operationalRoles, isAdmin))) &&
+      (companyFilter === "all" || String(row.companyId) === companyFilter) &&
+      (beneficiaryFilter === "all" ||
+        String(row.beneficiaryId) === beneficiaryFilter) &&
+      (channelFilter === "all" || String(row.channelId) === channelFilter) &&
+      (!fromDate || requestDate >= new Date(`${fromDate}T00:00:00`)) &&
+      (!toDate || requestDate <= new Date(`${toDate}T23:59:59`))
+    );
   });
-  const hasFilters = Boolean(search.trim() || fromDate || toDate) || [statusFilter, companyFilter, beneficiaryFilter, channelFilter].some((value) => value !== "all");
-  const clearFilters = () => { setSearch(""); setStatusFilter("all"); setCompanyFilter("all"); setBeneficiaryFilter("all"); setChannelFilter("all"); setFromDate(""); setToDate(""); };
+  const hasFilters =
+    Boolean(search.trim() || fromDate || toDate || awaitingMyAction) ||
+    [statusFilter, companyFilter, beneficiaryFilter, channelFilter].some(
+      value => value !== "all"
+    );
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setAwaitingMyAction(false);
+    setCompanyFilter("all");
+    setBeneficiaryFilter("all");
+    setChannelFilter("all");
+    setFromDate("");
+    setToDate("");
+  };
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
   const logExport = trpc.reports.logExport.useMutation();
-  const exportRows = toFinancialExportRows(filteredRows, { companyName, beneficiaryName });
-  const exportScope = companyFilter === "all" ? "all-companies" : `company-${companyFilter}`;
+  const exportRows = toFinancialExportRows(filteredRows, {
+    companyName,
+    beneficiaryName,
+  });
+  const exportScope =
+    companyFilter === "all" ? "all-companies" : `company-${companyFilter}`;
   const exportRequestTable = async (format: "xlsx" | "pdf") => {
     if (!isAdmin || isExporting || !exportRows.length) return;
     setIsExporting(true);
     setExportMessage("");
     try {
-      await logExport.mutateAsync({ format, ...(companyFilter !== "all" ? { companyId: Number(companyFilter) } : {}), recordCount: exportRows.length });
-      if (format === "xlsx") downloadExcel(exportRows, `trezo-requests-${exportScope}.xls`, "TREZO Smart Treasury · جدول طلبات الصرف");
-      else downloadPdf(exportRows, `trezo-requests-${exportScope}.pdf`, companyFilter === "all" ? "All companies · Requests table" : `Company #${companyFilter} · Requests table`);
+      await logExport.mutateAsync({
+        format,
+        ...(companyFilter !== "all"
+          ? { companyId: Number(companyFilter) }
+          : {}),
+        recordCount: exportRows.length,
+      });
+      if (format === "xlsx")
+        downloadExcel(
+          exportRows,
+          `trezo-requests-${exportScope}.xls`,
+          "TREZO Smart Treasury · جدول طلبات الصرف"
+        );
+      else
+        downloadPdf(
+          exportRows,
+          `trezo-requests-${exportScope}.pdf`,
+          companyFilter === "all"
+            ? "All companies · Requests table"
+            : `Company #${companyFilter} · Requests table`
+        );
     } catch (error) {
-      setExportMessage(`تعذر تصدير ${format === "xlsx" ? "Excel" : "PDF"}: ${error instanceof Error ? error.message : "أعد المحاولة"}`);
+      setExportMessage(
+        `تعذر تصدير ${format === "xlsx" ? "Excel" : "PDF"}: ${error instanceof Error ? error.message : "أعد المحاولة"}`
+      );
     } finally {
       setIsExporting(false);
     }
@@ -179,27 +1966,720 @@ function RequestWorkflow({ rows, currencies, companies, beneficiaries, channels,
   const [selectedRequestId, setSelectedRequestId] = useState<number>();
   const [file, setFile] = useState<File | null>(null);
   const [attachmentMessage, setAttachmentMessage] = useState("");
-  const transition = trpc.requests.transition.useMutation({ onSuccess: () => void utils.requests.list.invalidate() });
-  const attachments = trpc.attachments.list.useQuery({ requestId: selectedRequestId ?? 0 }, { enabled: Boolean(selectedRequestId) });
-  const upload = trpc.attachments.upload.useMutation({ onSuccess: () => { setFile(null); setAttachmentMessage("تم رفع المرفق بنجاح"); void attachments.refetch(); }, onError: (error) => setAttachmentMessage(error.message) });
-  const download = trpc.attachments.download.useMutation({ onError: (error) => setAttachmentMessage(error.message) });
-  const next: Record<string, { label: string; status: "draft" | "review" | "approved" | "executed" | "rejected" } | undefined> = { draft: { label: "إرسال للمراجعة", status: "review" }, review: { label: "اعتماد المدير المالي", status: "approved" }, approved: { label: "تسجيل التنفيذ", status: "executed" }, rejected: { label: "إعادة فتح المسودة", status: "draft" } };
-  const reviewerAction = { label: "تأكيد المراجعة", status: "review" as const };
+  const transitionLock = useRef(false);
+  const transition = trpc.requests.transition.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.requests.list.invalidate(),
+        utils.requests.workflow.invalidate(),
+      ]);
+    },
+    onSettled: () => {
+      transitionLock.current = false;
+    },
+  });
+  const attachments = trpc.attachments.list.useQuery(
+    { requestId: selectedRequestId ?? 0 },
+    { enabled: Boolean(selectedRequestId) }
+  );
+  const upload = trpc.attachments.upload.useMutation({
+    onSuccess: () => {
+      setFile(null);
+      setAttachmentMessage("تم رفع المرفق بنجاح");
+      void attachments.refetch();
+    },
+    onError: error => setAttachmentMessage(error.message),
+  });
+  const download = trpc.attachments.download.useMutation({
+    onError: error => setAttachmentMessage(error.message),
+  });
   const canCreate = isAdmin || operationalRoles.includes("accountant");
-  const canReview = isAdmin || operationalRoles.includes("reviewer");
-  const canApprove = isAdmin || operationalRoles.includes("cfo");
-  const canExecute = isAdmin || operationalRoles.includes("gm") || operationalRoles.includes("cfo");
-  const canReopen = isAdmin || operationalRoles.includes("accountant") || operationalRoles.includes("reviewer");
-  const openAttachment = async (attachmentId: number, fileName: string, shouldDownload: boolean) => { try { const result = await download.mutateAsync({ attachmentId }); const link = document.createElement("a"); link.href = result.url; link.target = shouldDownload ? "_self" : "_blank"; if (shouldDownload) link.download = fileName; link.rel = "noreferrer"; document.body.appendChild(link); link.click(); link.remove(); } catch { /* mutation exposes the localized error in the panel */ } };
-  const uploadFile = () => { if (!selectedRequestId || !file) return; const reader = new FileReader(); reader.onload = () => { const base64 = typeof reader.result === "string" ? reader.result : ""; if (base64) upload.mutate({ requestId: selectedRequestId, fileName: file.name, mimeType: file.type || "application/octet-stream", sizeBytes: file.size, base64 }); }; reader.readAsDataURL(file); };
-  return <div className="overflow-hidden rounded-2xl border bg-card"><div className="border-b p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="font-display text-lg font-extrabold">قائمة طلبات الصرف</h3><p className="mt-1 text-xs text-muted-foreground">عرض تشغيلي مرتب مع فلاتر الشركة والمستفيد وقناة الصرف والتاريخ.</p></div><div className="flex flex-wrap items-center gap-2">{canCreate && <button onClick={onCreateRequest} className="inline-flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary"><Plus size={15}/> طلب جديد</button>}{isAdmin && <><button type="button" disabled={!exportRows.length || isExporting || logExport.isPending} onClick={() => void exportRequestTable("xlsx")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-3 py-2.5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-50" title="تصدير الصفوف الظاهرة بعد تطبيق الفلاتر"><FileSpreadsheet size={15}/> Excel</button><button type="button" disabled={!exportRows.length || isExporting || logExport.isPending} onClick={() => void exportRequestTable("pdf")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-3 py-2.5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-50" title="تصدير الصفوف الظاهرة بعد تطبيق الفلاتر"><FileText size={15}/> PDF</button></>}</div></div>{exportMessage && <p role="alert" className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs font-semibold text-destructive">{exportMessage}</p>}<div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2.5 md:col-span-2 xl:col-span-2"><Search size={16} className="text-muted-foreground"/><input value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="ابحث بالرقم أو البيان أو المستفيد أو الشركة" aria-label="البحث في طلبات الصرف"/></label><select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="اختيار الشركة النشطة"><option value="all">كل الشركات</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="تصفية حالة الطلب"><option value="all">كل الحالات</option>{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select value={beneficiaryFilter} onChange={(event) => setBeneficiaryFilter(event.target.value)} className="rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="تصفية المستفيد"><option value="all">كل المستفيدين</option>{beneficiaries.map((beneficiary) => <option key={beneficiary.id} value={beneficiary.id}>{beneficiary.name}</option>)}</select><select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)} className="rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="تصفية قناة الصرف"><option value="all">كل قنوات الصرف</option>{channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select><label className="text-xs font-semibold text-muted-foreground"><span className="mb-1 block">من تاريخ</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="من تاريخ"/></label><label className="text-xs font-semibold text-muted-foreground"><span className="mb-1 block">إلى تاريخ</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="إلى تاريخ"/></label></div>{hasFilters && <div className="mt-4 flex flex-wrap items-center gap-2 text-xs"><span className="rounded-full bg-secondary px-3 py-1.5 font-semibold text-muted-foreground">عرض {filteredRows.length} من {rows.length} طلب</span><button onClick={clearFilters} className="rounded-full border px-3 py-1.5 font-bold text-primary">مسح الفلاتر</button></div>}</div><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-right text-sm"><thead className="bg-secondary/50 text-xs text-muted-foreground"><tr><th className="px-4 py-2.5 font-bold">الطلب</th><th className="px-4 py-2.5 font-bold">التاريخ</th><th className="px-4 py-2.5 font-bold">المستفيد</th><th className="px-4 py-2.5 font-bold">الشركة</th><th className="px-4 py-2.5 font-bold">قناة الصرف</th><th className="px-4 py-2.5 font-bold">المبلغ</th><th className="px-4 py-2.5 font-bold">الحالة والإجراء</th></tr></thead><tbody className="divide-y">{filteredRows.length ? filteredRows.map((row) => { const action = next[row.status]; const isSelected = selectedRequestId === row.id; const statusView = statusPresentation[row.status] ?? { label: statusLabels[row.status] ?? row.status, badge: "border-border bg-secondary text-primary", Icon: CircleDashed }; const StatusIcon = statusView.Icon; return <tr key={row.id} className="cursor-pointer align-top hover:bg-secondary/25" onClick={(event) => { if (!(event.target as HTMLElement).closest("button, input, select, a")) onOpenRequest(row.id); }} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) { event.preventDefault(); onOpenRequest(row.id); } }} role="button" tabIndex={0} aria-label={`فتح تفاصيل الطلب ${row.referenceNumber}`}><td className="px-4 py-2.5"><p className="font-bold">{row.title}</p><p className="mt-1 text-xs text-muted-foreground">{row.referenceNumber}</p></td><td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{new Date(row.scheduledFor ?? row.createdAt ?? 0).toLocaleDateString("ar-SA")}</td><td className="px-4 py-2.5 font-semibold">{beneficiaryName(row.beneficiaryId)}</td><td className="px-4 py-2.5">{companyName(row.companyId)}</td><td className="px-4 py-2.5 text-xs">{channelName(row.channelId)}</td><td className="whitespace-nowrap px-4 py-2.5 font-display font-bold">{formatCurrencyAmount(row.amount, row.currency, currencies)} <span className="text-xs text-muted-foreground">{row.currency}</span></td><td className="min-w-[220px] px-4 py-2.5"><span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusView.badge}`} title={`الحالة الحالية: ${statusView.label}`}><StatusIcon size={14}/>{statusView.label}</span><div className="mt-2 flex flex-wrap gap-1.5">{row.status === "review" && canReview && <button disabled={transition.isPending} onClick={() => transition.mutate({ requestId: row.id, toStatus: reviewerAction.status })} className="rounded-xl border border-primary px-3 py-2 text-xs font-bold text-primary disabled:opacity-50">{transition.isPending ? "جارٍ الحفظ…" : reviewerAction.label}</button>}{action && ((row.status === "draft" && canCreate) || (row.status === "review" && canApprove) || (row.status === "approved" && canExecute) || (row.status === "rejected" && canReopen)) && <button disabled={transition.isPending} onClick={() => transition.mutate({ requestId: row.id, toStatus: action.status })} className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50">{transition.isPending ? "جارٍ الحفظ…" : action.label}</button>}<button onClick={() => setSelectedRequestId(isSelected ? undefined : row.id)} className="rounded-xl border px-3 py-2 text-xs font-bold">{isSelected ? "إخفاء المرفقات" : "المرفقات"}</button></div></td></tr>; }) : <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-muted-foreground">{rows.length ? "لا توجد نتائج مطابقة للفلاتر الحالية." : "لا توجد طلبات صرف بعد."}</td></tr>}</tbody></table></div>{selectedRequestId && <div className="border-t bg-secondary/30 p-5"><div className="mb-3 text-sm font-bold">مرفقات الطلب المحدد</div><div className="flex flex-col gap-3 sm:flex-row sm:items-center"><input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="min-w-0 flex-1 text-xs" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.doc,.docx"/><button disabled={!file || upload.isPending || file.size > 8_000_000} onClick={uploadFile} className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-50">{upload.isPending ? "جارٍ الرفع…" : "رفع المرفق"}</button></div><div className="mt-3 space-y-2">{attachmentMessage && <p className="text-xs font-semibold text-primary">{attachmentMessage}</p>}{attachments.error && <p className="text-xs font-semibold text-destructive">تعذر تحميل المرفقات: {attachments.error.message}</p>}{(attachments.data ?? []).map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3 text-xs"><span className="font-semibold">{item.fileName} · {Math.ceil(item.sizeBytes / 1024)} كيلوبايت</span><button onClick={() => void openAttachment(item.id, item.fileName, false)} disabled={download.isPending} className="font-bold text-primary disabled:opacity-50">فتح</button><button onClick={() => void openAttachment(item.id, item.fileName, true)} disabled={download.isPending} className="font-bold text-primary disabled:opacity-50">تنزيل</button></div>)}{attachments.isLoading && <p className="text-xs text-muted-foreground">جارٍ تحميل المرفقات…</p>}{!attachments.isLoading && !attachments.error && !(attachments.data ?? []).length && <p className="text-xs text-muted-foreground">لا توجد مرفقات لهذا الطلب.</p>}</div></div>}</div>;
+  const requestTransition = (
+    requestId: number,
+    toStatus: "draft" | "review" | "approved" | "executed" | "rejected"
+  ) => {
+    if (transition.isPending || transitionLock.current) return;
+    transitionLock.current = true;
+    transition.mutate({ requestId, toStatus });
+  };
+  const closeRequestDialog = () => {
+    setSelectedRequestId(undefined);
+    setFile(null);
+    setAttachmentMessage("");
+  };
+  const openAttachment = async (
+    attachmentId: number,
+    fileName: string,
+    shouldDownload: boolean
+  ) => {
+    try {
+      const result = await download.mutateAsync({ attachmentId });
+      const link = document.createElement("a");
+      link.href = result.url;
+      link.target = shouldDownload ? "_self" : "_blank";
+      if (shouldDownload) link.download = fileName;
+      link.rel = "noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch {
+      /* mutation exposes the localized error in the panel */
+    }
+  };
+  const uploadFile = () => {
+    if (!selectedRequestId || !file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = typeof reader.result === "string" ? reader.result : "";
+      if (base64)
+        upload.mutate({
+          requestId: selectedRequestId,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          base64,
+        });
+    };
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-card">
+      <div className="border-b p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h3 className="font-display text-lg font-extrabold">
+              قائمة طلبات الصرف
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              عرض تشغيلي مرتب مع فلاتر الشركة والمستفيد وقناة الصرف والتاريخ.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canCreate && (
+              <button
+                onClick={onCreateRequest}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-primary"
+              >
+                <Plus size={15} /> طلب جديد
+              </button>
+            )}
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  disabled={
+                    !exportRows.length || isExporting || logExport.isPending
+                  }
+                  onClick={() => void exportRequestTable("xlsx")}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-3 py-2.5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  title="تصدير الصفوف الظاهرة بعد تطبيق الفلاتر"
+                >
+                  <FileSpreadsheet size={15} /> Excel
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !exportRows.length || isExporting || logExport.isPending
+                  }
+                  onClick={() => void exportRequestTable("pdf")}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-3 py-2.5 text-xs font-bold text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  title="تصدير الصفوف الظاهرة بعد تطبيق الفلاتر"
+                >
+                  <FileText size={15} /> PDF
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        {exportMessage && (
+          <p
+            role="alert"
+            className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs font-semibold text-destructive"
+          >
+            {exportMessage}
+          </p>
+        )}
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2.5 md:col-span-2 xl:col-span-2">
+            <Search size={16} className="text-muted-foreground" />
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              placeholder="ابحث بالرقم أو البيان أو المستفيد أو الشركة"
+              aria-label="البحث في طلبات الصرف"
+            />
+          </label>
+          <select
+            value={companyFilter}
+            onChange={event => setCompanyFilter(event.target.value)}
+            className="rounded-xl border bg-background px-3 py-2.5 text-sm"
+            aria-label="اختيار الشركة النشطة"
+          >
+            <option value="all">كل الشركات</option>
+            {companies.map(company => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={event => setStatusFilter(event.target.value)}
+            className="rounded-xl border bg-background px-3 py-2.5 text-sm"
+            aria-label="تصفية حالة الطلب"
+          >
+            <option value="all">كل الحالات</option>
+            {Object.entries(statusLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+              ))}
+          </select>
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border bg-background px-3 py-2.5 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={awaitingMyAction}
+              onChange={event => setAwaitingMyAction(event.target.checked)}
+              className="h-4 w-4 accent-primary"
+              aria-label="طلبات بانتظار إجراءي"
+            />
+            <span>بانتظار إجراءي</span>
+          </label>
+          <select
+            value={beneficiaryFilter}
+            onChange={event => setBeneficiaryFilter(event.target.value)}
+            className="rounded-xl border bg-background px-3 py-2.5 text-sm"
+            aria-label="تصفية المستفيد"
+          >
+            <option value="all">كل المستفيدين</option>
+            {beneficiaries.map(beneficiary => (
+              <option key={beneficiary.id} value={beneficiary.id}>
+                {beneficiary.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={channelFilter}
+            onChange={event => setChannelFilter(event.target.value)}
+            className="rounded-xl border bg-background px-3 py-2.5 text-sm"
+            aria-label="تصفية قناة الصرف"
+          >
+            <option value="all">كل قنوات الصرف</option>
+            {channels.map(channel => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name}
+              </option>
+            ))}
+          </select>
+          <label className="text-xs font-semibold text-muted-foreground">
+            <span className="mb-1 block">من تاريخ</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={event => setFromDate(event.target.value)}
+              className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm"
+              aria-label="من تاريخ"
+            />
+          </label>
+          <label className="text-xs font-semibold text-muted-foreground">
+            <span className="mb-1 block">إلى تاريخ</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={event => setToDate(event.target.value)}
+              className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm"
+              aria-label="إلى تاريخ"
+            />
+          </label>
+        </div>
+        {hasFilters && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-secondary px-3 py-1.5 font-semibold text-muted-foreground">
+              عرض {filteredRows.length} من {rows.length} طلب
+            </span>
+            <button
+              onClick={clearFilters}
+              className="rounded-full border px-3 py-1.5 font-bold text-primary"
+            >
+              مسح الفلاتر
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1050px] text-right text-sm">
+          <thead className="bg-secondary/50 text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 font-bold">الطلب</th>
+              <th className="px-4 py-2.5 font-bold">التاريخ</th>
+              <th className="px-4 py-2.5 font-bold">المستفيد</th>
+              <th className="px-4 py-2.5 font-bold">الشركة</th>
+              <th className="px-4 py-2.5 font-bold">قناة الصرف</th>
+              <th className="px-4 py-2.5 font-bold">المبلغ</th>
+              <th className="px-4 py-2.5 font-bold">الحالة والإجراء</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {filteredRows.length ? (
+              filteredRows.map(row => {
+                const action = getPendingRequestAction(
+                  row,
+                  operationalRoles,
+                  isAdmin
+                );
+                const isSelected = selectedRequestId === row.id;
+                const statusView = statusPresentation[row.status] ?? {
+                  label: statusLabels[row.status] ?? row.status,
+                  badge: "border-border bg-secondary text-primary",
+                  Icon: CircleDashed,
+                };
+                const StatusIcon = statusView.Icon;
+                return (
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer align-top hover:bg-secondary/25"
+                    onClick={event => {
+                      if (
+                        !(event.target as HTMLElement).closest(
+                          "button, input, select, a"
+                        )
+                      )
+                        setSelectedRequestId(row.id);
+                    }}
+                    onKeyDown={event => {
+                      if (
+                        (event.key === "Enter" || event.key === " ") &&
+                        event.target === event.currentTarget
+                      ) {
+                        event.preventDefault();
+                        setSelectedRequestId(row.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`فتح تفاصيل الطلب ${row.referenceNumber}`}
+                  >
+                    <td className="px-4 py-2.5">
+                      <p className="font-bold">{row.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {row.referenceNumber}
+                      </p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">
+                      {new Date(
+                        row.scheduledFor ?? row.createdAt ?? 0
+                      ).toLocaleDateString("ar-SA")}
+                    </td>
+                    <td className="px-4 py-2.5 font-semibold">
+                      {beneficiaryName(row.beneficiaryId)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {companyName(row.companyId)}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      {channelName(row.channelId)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 font-display font-bold">
+                      {formatCurrencyAmount(
+                        row.amount,
+                        row.currency,
+                        currencies
+                      )}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        {row.currency}
+                      </span>
+                    </td>
+                    <td className="min-w-[220px] px-4 py-2.5">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${statusView.badge}`}
+                        title={`الحالة الحالية: ${statusView.label}`}
+                      >
+                        <StatusIcon size={14} />
+                        {statusView.label}
+                      </span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {action && (
+                          <button
+                            disabled={transition.isPending}
+                            onClick={() => requestTransition(row.id, action.status)}
+                            className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
+                          >
+                            {transition.isPending
+                              ? "جارٍ الحفظ…"
+                              : action.label}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setSelectedRequestId(row.id)}
+                          className="rounded-xl border px-3 py-2 text-xs font-bold"
+                        >
+                          فتح السند والمرفقات
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="px-5 py-12 text-center text-sm text-muted-foreground"
+                >
+                  {awaitingMyAction
+                    ? "لا توجد سندات بانتظار إجراءك حالياً."
+                    : rows.length
+                    ? "لا توجد نتائج مطابقة للفلاتر الحالية."
+                    : "لا توجد طلبات صرف بعد."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <Dialog
+        open={selectedRequestId !== undefined}
+        onOpenChange={open => {
+          if (!open) closeRequestDialog();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto p-0" dir="rtl">
+          <DialogHeader className="border-b px-6 pb-4 pt-6 text-right">
+            <DialogTitle>تفاصيل سند الصرف</DialogTitle>
+            <DialogDescription>
+              راجع السند وعدّله عند السماح، ثم تعامل مع مرفقاته ضمن السياق نفسه.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 px-6 pb-6">
+            <RequestDetailPanel
+              rows={rows}
+              currencies={currencies}
+              selectedRequestId={selectedRequestId}
+              onSelectedRequestIdChange={requestId => {
+                if (requestId === undefined) closeRequestDialog();
+                else setSelectedRequestId(requestId);
+              }}
+            />
+            {selectedRequestId && (
+              <section className="border-t bg-secondary/30 p-5">
+          <div className="mb-3 text-sm font-bold">مرفقات الطلب المحدد</div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              type="file"
+              onChange={event => setFile(event.target.files?.[0] ?? null)}
+              className="min-w-0 flex-1 text-xs"
+              accept=".pdf,.png,.jpg,.jpeg,.xlsx,.doc,.docx"
+            />
+            <button
+              disabled={!file || upload.isPending || file.size > 8_000_000}
+              onClick={uploadFile}
+              className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-50"
+            >
+              {upload.isPending ? "جارٍ الرفع…" : "رفع المرفق"}
+            </button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {attachmentMessage && (
+              <p className="text-xs font-semibold text-primary">
+                {attachmentMessage}
+              </p>
+            )}
+            {attachments.error && (
+              <p className="text-xs font-semibold text-destructive">
+                تعذر تحميل المرفقات: {attachments.error.message}
+              </p>
+            )}
+            {(attachments.data ?? []).map(item => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center gap-3 text-xs"
+              >
+                <span className="font-semibold">
+                  {item.fileName} · {Math.ceil(item.sizeBytes / 1024)} كيلوبايت
+                </span>
+                <button
+                  onClick={() =>
+                    void openAttachment(item.id, item.fileName, false)
+                  }
+                  disabled={download.isPending}
+                  className="font-bold text-primary disabled:opacity-50"
+                >
+                  فتح
+                </button>
+                <button
+                  onClick={() =>
+                    void openAttachment(item.id, item.fileName, true)
+                  }
+                  disabled={download.isPending}
+                  className="font-bold text-primary disabled:opacity-50"
+                >
+                  تنزيل
+                </button>
+              </div>
+            ))}
+            {attachments.isLoading && (
+              <p className="text-xs text-muted-foreground">
+                جارٍ تحميل المرفقات…
+              </p>
+            )}
+            {!attachments.isLoading &&
+              !attachments.error &&
+              !(attachments.data ?? []).length && (
+                <p className="text-xs text-muted-foreground">
+                  لا توجد مرفقات لهذا الطلب.
+                </p>
+              )}
+          </div>
+              </section>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
-function DataTable({ title, rows }: { title: string; rows: string[][] }) { return <div className="overflow-hidden rounded-2xl border bg-card"><div className="border-b p-5"><h3 className="font-display text-lg font-extrabold">{title}</h3></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-right text-sm"><tbody>{rows.length ? rows.map((row, index) => <tr key={`${row[0]}-${index}`} className="border-b last:border-0">{row.map((cell, cellIndex) => <td key={cellIndex} className={`px-4 py-2.5 ${cellIndex === 0 ? "font-semibold" : "text-muted-foreground"}`}>{cell}</td>)}</tr>) : <tr><td className="px-5 py-12 text-center text-muted-foreground">لا توجد سجلات متاحة.</td></tr>}</tbody></table></div></div>; }
-type PrintableRow = { referenceNumber: string; title: string; amount: string; currency: string; status: string };
-type PrintTemplate = "أمر الصرف الرسمي" | "التنفيذي الحديث" | "المحاسبي المختصر" | "الأرشيف الداخلي";
+function DataTable({ title, rows }: { title: string; rows: string[][] }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-card">
+      <div className="border-b p-5">
+        <h3 className="font-display text-lg font-extrabold">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-right text-sm">
+          <tbody>
+            {rows.length ? (
+              rows.map((row, index) => (
+                <tr
+                  key={`${row[0]}-${index}`}
+                  className="border-b last:border-0"
+                >
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className={`px-4 py-2.5 ${cellIndex === 0 ? "font-semibold" : "text-muted-foreground"}`}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-5 py-12 text-center text-muted-foreground">
+                  لا توجد سجلات متاحة.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+type PrintableRow = {
+  referenceNumber: string;
+  title: string;
+  amount: string;
+  currency: string;
+  status: string;
+};
+type PrintTemplate =
+  | "أمر الصرف الرسمي"
+  | "التنفيذي الحديث"
+  | "المحاسبي المختصر"
+  | "الأرشيف الداخلي";
 
-function escapeHtml(value: string) { return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\\\"": "&quot;", "'": "&#039;" })[character] ?? character); }
+function escapeHtml(value: string) {
+  return value.replace(
+    /[&<>\"']/g,
+    character =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '\\"': "&quot;",
+        "'": "&#039;",
+      })[character] ?? character
+  );
+}
 
-function PrintCenter({ rows }: { rows: PrintableRow[] }) { const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const filteredRows = rows.filter((row) => { const term = search.trim().toLocaleLowerCase(); return (!term || `${row.referenceNumber} ${row.title} ${row.currency}`.toLocaleLowerCase().includes(term)) && (status === "all" || row.status === status); }); const counts = rows.reduce<Record<string, number>>((result, row) => ({ ...result, [row.status]: (result[row.status] ?? 0) + 1 }), {}); const clear = () => { setSearch(""); setStatus("all"); }; return <div className="rounded-2xl border bg-card p-8 print:border-0"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-display text-xl font-extrabold">مركز التقارير والطباعة</h3><p className="mt-2 text-sm text-muted-foreground">اختر نطاق البيانات أولاً، ثم افتح القالب الرسمي المناسب للطباعة أو الأرشفة.</p></div><span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-primary">{filteredRows.length} من {rows.length} طلب</span></div><div className="mt-6 grid gap-3 sm:grid-cols-[1fr_180px_auto]"><label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2.5"><Search size={16} className="text-muted-foreground"/><input value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="ابحث بالمرجع أو البيان أو العملة" aria-label="البحث في التقارير"/></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-xl border bg-background px-3 py-2.5 text-sm" aria-label="تصفية حالة التقارير"><option value="all">كل الحالات</option><option value="draft">مسودة ({counts.draft ?? 0})</option><option value="review">قيد المراجعة ({counts.review ?? 0})</option><option value="approved">معتمد ({counts.approved ?? 0})</option><option value="executed">منفذ ({counts.executed ?? 0})</option><option value="rejected">مرفوض ({counts.rejected ?? 0})</option></select><button type="button" onClick={clear} className="rounded-xl border px-4 py-2.5 text-xs font-bold text-primary">مسح الفلاتر</button></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-secondary p-4"><p className="text-xs text-muted-foreground">إجمالي الطلبات</p><p className="mt-1 font-display text-xl font-extrabold">{filteredRows.length}</p></div><div className="rounded-xl bg-secondary p-4"><p className="text-xs text-muted-foreground">قيد المراجعة</p><p className="mt-1 font-display text-xl font-extrabold">{filteredRows.filter((row) => row.status === "review").length}</p></div><div className="rounded-xl bg-secondary p-4"><p className="text-xs text-muted-foreground">منفذة</p><p className="mt-1 font-display text-xl font-extrabold">{filteredRows.filter((row) => row.status === "executed").length}</p></div></div><div className="mt-8 grid gap-4 sm:grid-cols-2"><ReportTile template="أمر الصرف الرسمي" rows={filteredRows}/><ReportTile template="التنفيذي الحديث" rows={filteredRows}/><ReportTile template="المحاسبي المختصر" rows={filteredRows}/><ReportTile template="الأرشيف الداخلي" rows={filteredRows}/></div>{!rows.length && <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">لا توجد طلبات حالية؛ ستظهر القوالب ببيانات فعلية بعد إنشاء أول طلب صرف.</p>}{rows.length > 0 && !filteredRows.length && <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">لا توجد طلبات مطابقة للفلاتر الحالية. امسح الفلاتر لعرض كل البيانات.</p>}</div>; }
+function PrintCenter({ rows }: { rows: PrintableRow[] }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const filteredRows = rows.filter(row => {
+    const term = search.trim().toLocaleLowerCase();
+    return (
+      (!term ||
+        `${row.referenceNumber} ${row.title} ${row.currency}`
+          .toLocaleLowerCase()
+          .includes(term)) &&
+      (status === "all" || row.status === status)
+    );
+  });
+  const counts = rows.reduce<Record<string, number>>(
+    (result, row) => ({
+      ...result,
+      [row.status]: (result[row.status] ?? 0) + 1,
+    }),
+    {}
+  );
+  const clear = () => {
+    setSearch("");
+    setStatus("all");
+  };
+  return (
+    <div className="rounded-2xl border bg-card p-8 print:border-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-display text-xl font-extrabold">
+            مركز التقارير والطباعة
+          </h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            اختر نطاق البيانات أولاً، ثم افتح القالب الرسمي المناسب للطباعة أو
+            الأرشفة.
+          </p>
+        </div>
+        <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-bold text-primary">
+          {filteredRows.length} من {rows.length} طلب
+        </span>
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-[1fr_180px_auto]">
+        <label className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2.5">
+          <Search size={16} className="text-muted-foreground" />
+          <input
+            value={search}
+            onChange={event => setSearch(event.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+            placeholder="ابحث بالمرجع أو البيان أو العملة"
+            aria-label="البحث في التقارير"
+          />
+        </label>
+        <select
+          value={status}
+          onChange={event => setStatus(event.target.value)}
+          className="rounded-xl border bg-background px-3 py-2.5 text-sm"
+          aria-label="تصفية حالة التقارير"
+        >
+          <option value="all">كل الحالات</option>
+          <option value="draft">مسودة ({counts.draft ?? 0})</option>
+          <option value="review">قيد المراجعة ({counts.review ?? 0})</option>
+          <option value="approved">معتمد ({counts.approved ?? 0})</option>
+          <option value="executed">منفذ ({counts.executed ?? 0})</option>
+          <option value="rejected">مرفوض ({counts.rejected ?? 0})</option>
+        </select>
+        <button
+          type="button"
+          onClick={clear}
+          className="rounded-xl border px-4 py-2.5 text-xs font-bold text-primary"
+        >
+          مسح الفلاتر
+        </button>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl bg-secondary p-4">
+          <p className="text-xs text-muted-foreground">إجمالي الطلبات</p>
+          <p className="mt-1 font-display text-xl font-extrabold">
+            {filteredRows.length}
+          </p>
+        </div>
+        <div className="rounded-xl bg-secondary p-4">
+          <p className="text-xs text-muted-foreground">قيد المراجعة</p>
+          <p className="mt-1 font-display text-xl font-extrabold">
+            {filteredRows.filter(row => row.status === "review").length}
+          </p>
+        </div>
+        <div className="rounded-xl bg-secondary p-4">
+          <p className="text-xs text-muted-foreground">منفذة</p>
+          <p className="mt-1 font-display text-xl font-extrabold">
+            {filteredRows.filter(row => row.status === "executed").length}
+          </p>
+        </div>
+      </div>
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        <ReportTile template="أمر الصرف الرسمي" rows={filteredRows} />
+        <ReportTile template="التنفيذي الحديث" rows={filteredRows} />
+        <ReportTile template="المحاسبي المختصر" rows={filteredRows} />
+        <ReportTile template="الأرشيف الداخلي" rows={filteredRows} />
+      </div>
+      {!rows.length && (
+        <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+          لا توجد طلبات حالية؛ ستظهر القوالب ببيانات فعلية بعد إنشاء أول طلب
+          صرف.
+        </p>
+      )}
+      {rows.length > 0 && !filteredRows.length && (
+        <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+          لا توجد طلبات مطابقة للفلاتر الحالية. امسح الفلاتر لعرض كل البيانات.
+        </p>
+      )}
+    </div>
+  );
+}
 
-function ReportTile({ template, rows }: { template: PrintTemplate; rows: PrintableRow[] }) { const preview = () => { const popup = window.open("", "_blank", "noopener,noreferrer,width=900,height=700"); if (!popup) { window.alert("تعذر فتح نافذة المعاينة. اسمح بالنوافذ المنبثقة ثم حاول مرة أخرى."); return; } const first = rows[0]; const value = (item: string | undefined, fallback = "—") => escapeHtml(item ?? fallback); const signatures = `<div class="signatures"><div><strong>إعداد المحاسب</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>مراجعة المراجع</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>اعتماد المدير المالي</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>اعتماد المدير العام / التنفيذ</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div></div>`; const signatureBlock = template === "الأرشيف الداخلي" ? signatures : ""; const details = `<table class="details"><tbody><tr><th>الرقم المرجعي</th><td>${value(first?.referenceNumber)}</td><th>تاريخ الإصدار</th><td>${new Date().toLocaleDateString("ar-SA")}</td></tr><tr><th>البيان</th><td colspan="3">${value(first?.title, "لا يوجد طلب محدد")}</td></tr><tr><th>المبلغ</th><td>${value(first?.amount)}</td><th>العملة</th><td>${value(first?.currency)}</td></tr><tr><th>الحالة</th><td colspan="3">${value(first?.status)}</td></tr></tbody></table>`; const safeRows = rows.slice(0, 50).map((row) => `<tr><td>${value(row.referenceNumber)}</td><td>${value(row.title)}</td><td>${value(row.amount)} ${value(row.currency, "")}</td><td>${value(row.status)}</td></tr>`).join(""); const body = template === "أمر الصرف الرسمي" ? `<h2>أمر صرف رسمي</h2>${details}<p class="notice">نص رسمي كامل لبيانات أمر الصرف. تُستكمل الاعتمادات في النظام، ولا تُعرض تفاصيل مسار الاعتماد في النسخة الرسمية.</p>${signatureBlock}` : template === "التنفيذي الحديث" ? `<h2>التنفيذي الحديث</h2>${details}<p class="notice">عرض حديث ومباشر لبيانات الطلب بغرض المشاركة التشغيلية والطباعة، دون تفاصيل مسار الاعتماد الداخلي.</p>${signatureBlock}` : template === "المحاسبي المختصر" ? `<h2>المحاسبي المختصر</h2><p class="notice">جدول موجز مستخرج من طلبات الصرف الحالية. العملات معروضة كما سُجلت في كل طلب دون تجميع عملات مختلفة.</p><table><thead><tr><th>المرجع</th><th>البيان</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${safeRows || `<tr><td colspan="4">لا توجد بيانات</td></tr>`}</tbody></table>${signatureBlock}` : `<h2>الأرشيف الداخلي</h2><p class="notice">عدد الطلبات المعروضة: ${rows.length}. لا يتم جمع العملات المختلفة في هذا القالب دون أسعار صرف معتمدة.</p><table><thead><tr><th>المرجع</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr><td>${value(row.referenceNumber)}</td><td>${value(row.amount)} ${value(row.currency, "")}</td><td>${value(row.status)}</td></tr>`).join("") || `<tr><td colspan="3">لا توجد بيانات</td></tr>`}</tbody></table>${signatureBlock}`; popup.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${value(template)}</title><style>@page{size:A4;margin:16mm}body{font-family:Arial,sans-serif;color:#17382d;line-height:1.8;margin:0}header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #176b54;padding-bottom:14px}header h1{margin:0;color:#176b54;font-size:22px}header p{margin:4px 0 0;color:#63766f;font-size:12px}.meta{color:#63766f;font-size:12px;text-align:left}h2{color:#176b54;font-size:20px;margin:28px 0 12px}.document{margin-top:24px;border:1px solid #c9dcd3;padding:20px}.details,table{width:100%;border-collapse:collapse;margin-top:14px}.details th,.details td,th,td{border:1px solid #c9dcd3;padding:8px;text-align:right}.details th,th{background:#eef6f2;font-weight:700}.notice{border-right:4px solid #d5a746;background:#fff9e9;padding:10px 14px;margin-top:18px;font-size:13px}.signatures{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:46px;page-break-inside:avoid}.signatures div{min-height:85px;border-top:1px solid #17382d;padding-top:8px}.signatures strong,.signatures span{display:block;font-size:12px}.signatures span{margin-top:7px;color:#63766f}footer{margin-top:28px;padding-top:10px;border-top:1px solid #c9dcd3;color:#63766f;font-size:10px;text-align:center}button{margin-top:24px;padding:12px 20px;background:#176b54;color:#fff;border:0;border-radius:8px;font-weight:bold}@media print{button{display:none}}</style></head><body><header><div><h1>TREZO | ${value(template)}</h1><p>الخزينة الذكية — مستند رسمي للاستخدام الداخلي</p></div><div class="meta">تاريخ الإصدار<br/>${new Date().toLocaleDateString("ar-SA")}</div></header><main class="document">${body}</main><footer>هذا المستند صادر من نظام TREZO Smart Treasury ويخضع لسجل التدقيق والصلاحيات المعتمدة.</footer><button onclick="window.print()">طباعة المستند / حفظ كـ PDF</button></body></html>`); popup.document.close(); }; return <button onClick={preview} className="rounded-xl border p-5 text-right transition hover:border-[#176b54] hover:bg-secondary"><p className="font-bold">{template}</p><p className="mt-1 text-xs text-muted-foreground">{rows.length ? "معاينة رسمية ببيانات الطلبات" : "معاينة رسمية فارغة"} ثم طباعة أو حفظ كـ PDF</p></button>; }
+function ReportTile({
+  template,
+  rows,
+}: {
+  template: PrintTemplate;
+  rows: PrintableRow[];
+}) {
+  const preview = () => {
+    const popup = window.open(
+      "",
+      "_blank",
+      "noopener,noreferrer,width=900,height=700"
+    );
+    if (!popup) {
+      window.alert(
+        "تعذر فتح نافذة المعاينة. اسمح بالنوافذ المنبثقة ثم حاول مرة أخرى."
+      );
+      return;
+    }
+    const first = rows[0];
+    const value = (item: string | undefined, fallback = "—") =>
+      escapeHtml(item ?? fallback);
+    const signatures = `<div class="signatures"><div><strong>إعداد المحاسب</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>مراجعة المراجع</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>اعتماد المدير المالي</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div><div><strong>اعتماد المدير العام / التنفيذ</strong><span>الاسم والتوقيع: __________________</span><span>التاريخ: ____ / ____ / ______</span></div></div>`;
+    const signatureBlock = template === "الأرشيف الداخلي" ? signatures : "";
+    const details = `<table class="details"><tbody><tr><th>الرقم المرجعي</th><td>${value(first?.referenceNumber)}</td><th>تاريخ الإصدار</th><td>${new Date().toLocaleDateString("ar-SA")}</td></tr><tr><th>البيان</th><td colspan="3">${value(first?.title, "لا يوجد طلب محدد")}</td></tr><tr><th>المبلغ</th><td>${value(first?.amount)}</td><th>العملة</th><td>${value(first?.currency)}</td></tr><tr><th>الحالة</th><td colspan="3">${value(first?.status)}</td></tr></tbody></table>`;
+    const safeRows = rows
+      .slice(0, 50)
+      .map(
+        row =>
+          `<tr><td>${value(row.referenceNumber)}</td><td>${value(row.title)}</td><td>${value(row.amount)} ${value(row.currency, "")}</td><td>${value(row.status)}</td></tr>`
+      )
+      .join("");
+    const body =
+      template === "أمر الصرف الرسمي"
+        ? `<h2>أمر صرف رسمي</h2>${details}<p class="notice">نص رسمي كامل لبيانات أمر الصرف. تُستكمل الاعتمادات في النظام، ولا تُعرض تفاصيل مسار الاعتماد في النسخة الرسمية.</p>${signatureBlock}`
+        : template === "التنفيذي الحديث"
+          ? `<h2>التنفيذي الحديث</h2>${details}<p class="notice">عرض حديث ومباشر لبيانات الطلب بغرض المشاركة التشغيلية والطباعة، دون تفاصيل مسار الاعتماد الداخلي.</p>${signatureBlock}`
+          : template === "المحاسبي المختصر"
+            ? `<h2>المحاسبي المختصر</h2><p class="notice">جدول موجز مستخرج من طلبات الصرف الحالية. العملات معروضة كما سُجلت في كل طلب دون تجميع عملات مختلفة.</p><table><thead><tr><th>المرجع</th><th>البيان</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${safeRows || `<tr><td colspan="4">لا توجد بيانات</td></tr>`}</tbody></table>${signatureBlock}`
+            : `<h2>الأرشيف الداخلي</h2><p class="notice">عدد الطلبات المعروضة: ${rows.length}. لا يتم جمع العملات المختلفة في هذا القالب دون أسعار صرف معتمدة.</p><table><thead><tr><th>المرجع</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>${
+                rows
+                  .slice(0, 50)
+                  .map(
+                    row =>
+                      `<tr><td>${value(row.referenceNumber)}</td><td>${value(row.amount)} ${value(row.currency, "")}</td><td>${value(row.status)}</td></tr>`
+                  )
+                  .join("") || `<tr><td colspan="3">لا توجد بيانات</td></tr>`
+              }</tbody></table>${signatureBlock}`;
+    popup.document.write(
+      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${value(template)}</title><style>@page{size:A4;margin:16mm}body{font-family:Arial,sans-serif;color:#17382d;line-height:1.8;margin:0}header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #176b54;padding-bottom:14px}header h1{margin:0;color:#176b54;font-size:22px}header p{margin:4px 0 0;color:#63766f;font-size:12px}.meta{color:#63766f;font-size:12px;text-align:left}h2{color:#176b54;font-size:20px;margin:28px 0 12px}.document{margin-top:24px;border:1px solid #c9dcd3;padding:20px}.details,table{width:100%;border-collapse:collapse;margin-top:14px}.details th,.details td,th,td{border:1px solid #c9dcd3;padding:8px;text-align:right}.details th,th{background:#eef6f2;font-weight:700}.notice{border-right:4px solid #d5a746;background:#fff9e9;padding:10px 14px;margin-top:18px;font-size:13px}.signatures{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:46px;page-break-inside:avoid}.signatures div{min-height:85px;border-top:1px solid #17382d;padding-top:8px}.signatures strong,.signatures span{display:block;font-size:12px}.signatures span{margin-top:7px;color:#63766f}footer{margin-top:28px;padding-top:10px;border-top:1px solid #c9dcd3;color:#63766f;font-size:10px;text-align:center}button{margin-top:24px;padding:12px 20px;background:#176b54;color:#fff;border:0;border-radius:8px;font-weight:bold}@media print{button{display:none}}</style></head><body><header><div><h1>TREZO | ${value(template)}</h1><p>الخزينة الذكية — مستند رسمي للاستخدام الداخلي</p></div><div class="meta">تاريخ الإصدار<br/>${new Date().toLocaleDateString("ar-SA")}</div></header><main class="document">${body}</main><footer>هذا المستند صادر من نظام TREZO Smart Treasury ويخضع لسجل التدقيق والصلاحيات المعتمدة.</footer><button onclick="window.print()">طباعة المستند / حفظ كـ PDF</button></body></html>`
+    );
+    popup.document.close();
+  };
+  return (
+    <button
+      onClick={preview}
+      className="rounded-xl border p-5 text-right transition hover:border-[#176b54] hover:bg-secondary"
+    >
+      <p className="font-bold">{template}</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {rows.length ? "معاينة رسمية ببيانات الطلبات" : "معاينة رسمية فارغة"} ثم
+        طباعة أو حفظ كـ PDF
+      </p>
+    </button>
+  );
+}
